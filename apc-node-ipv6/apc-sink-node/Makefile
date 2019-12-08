@@ -1,8 +1,9 @@
 DEFINES+=PROJECT_CONF_H=\"project-conf.h\"
 
-CONTIKI_PROJECT = apc-server-node
+CONTIKI_PROJECT = apc-sink-node
 all: $(CONTIKI_PROJECT)
 
-CONTIKI = ../..
-CONTIKI_WITH_RIME = 1
+CONTIKI = ../../..
+
+CONTIKI_WITH_IPV6 = 1
 include $(CONTIKI)/Makefile.include

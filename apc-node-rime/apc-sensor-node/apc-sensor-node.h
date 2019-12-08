@@ -1,25 +1,22 @@
 #include "contiki.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
 #include "dev/dht22.h"
-#include "dev/adc-sensors.h"
-#include "dev/leds.h"
+#include "dev/adc-zoul.h"
+#include "dev/zoul-sensors.h"
+#include "dev/pm25-sensor.h"
 #include "dev/gpio.h"
 #include "net/rime/rime.h"
 
-#include "apc-request.h"
+#include "../apc-request.h"
 
-//define pin configuration
-#define DHT22_CONF_PIN 5
-#define DHT22_CONF_PORT GPIO_A_NUM
+//define the number of sensors for this node (each data value is categorized as a sensor)
+#define SENSOR_COUNT      8
 
-//define the number of sensors for this node
-#define SENSOR_COUNT 2
+//return codes
+#define OPERATION_FAILED  0x00
+#define OPERATION_SUCCESS 0x01
 
 //global variables start
-static linkaddr_t serverAddr;
+static linkaddr_t sinkAddr;
 //global variables end
 
 //function that reads from the specified sensor
@@ -67,9 +64,19 @@ struct sensor_node_readings {
 static struct sensor_node_readings
 sn_readings;
 
+/*index is node number
+  the value is the sensor type
+*/
 static const uint8_t 
 SENSOR_TYPES[SENSOR_COUNT] =
 {
-  TEMPERATURE_T,
-  HUMIDITY_T
+  TEMPERATURE_T, //unit in Deg. Celsius
+  HUMIDITY_T, //unit in %RH
+  PM25_T, //unit in ppm, compute to microgram per m3 at processing server
+  CO_T, //unitless (ratio in milli scale), compute to ppm at processing server
+  /*NO2_T, //unit in ppm, unused */
+  CO2_T, //unitless (ratio in milli scale), compute to ppm at processing server
+  O3_T, //unitless (ratio in milli scale), compute to ppm at processing server
+  WIND_SPEED_T, //unit in m/s
+  WIND_DRCTN_T //may be N, S, E, W and their combinations
 };

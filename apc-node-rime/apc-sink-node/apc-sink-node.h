@@ -9,7 +9,7 @@
 #include "lib/list.h"
 #include "lib/memb.h"
 
-#include "apc-request.h"
+#include "../apc-request.h"
 
 //summarizes the readings of the sensor nodes in the identified sensor node list
 static void
@@ -70,12 +70,24 @@ struct sensor_node {
 
   /* Sensor readings data for this node */
 
-  char temperature[8];
-  char humidity[8];
+  char temperature[8]; //unit in Deg. Celsius
+  char humidity[8];    //unit in %RH (0%-100%)
+  char PM25[8];        //unit in ppm, compute to microgram per m3 at processing server
+  char CO[8];          //unitless (ratio in milli scale), compute to ppm at processing server
+  char CO2[8];         //unitless (ratio in milli scale), compute to ppm at processing server
+  char O3[8];          //unitless (ratio in milli scale), compute to ppm at processing server
+  char windSpeed[8];   //unit in m/s
+  char windDir[8];     //may be N, S, E, W and their combinations (NW, NE, SW, SE)
 };
 
 /* This #define defines the maximum amount of sensor nodes we can remember. */
-#define MAX_SENSOR_NODES 16
+#define MAX_SENSOR_NODES 3
+
+//amount of time for sink node to wait before requesting data from sensor nodes (seconds)
+#define SENSOR_REQUEST_INTERVAL 30
+
+//amount of time for sink node to wait before summarizing the output of the sensor nodes (seconds)
+#define SENSOR_SUMMARY_INTERVAL SENSOR_REQUEST_INTERVAL * 10
 
 /* This MEMB() definition defines a memory pool from which we allocate
    sensor node entries entries. */
