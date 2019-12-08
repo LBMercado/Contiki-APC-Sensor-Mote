@@ -1,25 +1,36 @@
 # Contiki-APC-Sensor-Mote
-This makes use of the Contiki OS and Zoul Firefly Platform.
+This makes use of the __*Contiki OS and Zoul Firefly Platform*__.
 The codes are designed to work in the Zoul Firefly Platform, I cannot guarantee that they will still work on a different platform.
 
 The following codes written are used to program the motes to read from the sensors, and communicate them from the collector motes to the sink mote.
 
-Two implementations are available here: rime and ipv6
-*the rime implementation is used for testing purposes with no connectivity outside its local network.
-*the ipv6 implementation provides connectivity outside its local network through a border router which is also the sink mote.
- -the border router is typically connected through a USB interface on a computer or the Raspberry Pi in this case.
+## Two implementations are available here:
+* the **rime** implementation is a non-ip based network used for testing purposes with no connectivity outside its local network.
+* the **ipv6** implementation provides connectivity outside its local network through a *border router* which is also the sink mote.
+	- the border router is typically connected through a USB interface on a computer or the Raspberry Pi in this case.
 
-There are two types of motes in this mote network:
+## There are two types of motes in this mote network:
 1. APC-Sensor-Node -> Collector Mote
 2. APC-Sink-Node -> Sink Mote & Border Router(Not Implemented Yet)
 
-This implementation is valid for only one mote network, if using multiple mote networks, a server is needed and is not covered here.
+### Sensors Used
+* DHT22 (Temperature and Humidity)
+* GP2Y1014AU0F (PM2.5)
+* MQ7 (Carbon Monoxide)
+* MQ131 (Ozone)
+* MQ135 (~~Nitrogen Oxides~~/Carbon Dioxide)
 
-*Move the 'APC-Node' folder into the examples folder in Contiki, and follow instructions to compile and run.
-*Move the files within 'place-in-dev-folder' inside the 'platform/zoul/dev' folder in Contiki
-*Replace also the dht22.c file there with the one here since there is a bug that prevents the original one from working properly, this file fixes that bug. [1]
+*quantifiable phenomenon are measured*
 
-Compiling and Uploading Code Using Contiki and Zoul Firefly (general procedure)
+**This implementation is valid for only one mote network, if using multiple mote networks, a server is needed and is not covered here.**
+
+## Procedure to make this work
+* Move one of the 'apc-node' folders into the examples folder in Contiki, and follow instructions to compile and run.
+	* make necessary changes to the project.conf file to fit your device's needs
+* Move the files within 'place-in-dev-folder' inside the 'platform/zoul/dev' folder in Contiki
+* Replace also the dht22.c file there with the one here since there is a bug that prevents the original one from working properly, this file fixes that bug. [1]
+
+## Compiling and Uploading Code Using Contiki and Zoul Firefly (general procedure)
 
 	1. Create the C file with the program logic. (Measure sensor, broadcast etc.)
 	2. Create the make file for compilation.
