@@ -14,7 +14,7 @@
 #define WIND_SENSOR_ADC_REF        5000
 #define WIND_SENSOR_ADC_MAX_VAL    32768  //15-bits ENOB ADC
 /*--------------------------------------------------------------------------------*/
-#define DEBUG 1
+#define DEBUG 0
 #if DEBUG
 	#define PRINTF(...) printf(__VA_ARGS__)
 #else
@@ -169,8 +169,7 @@ configure(int type, int value){
 	}
 }
 /*--------------------------------------------------------------------------------*/
-static
-int
+static int
 value(int type){
 	
 	switch(type){
@@ -200,13 +199,9 @@ value(int type){
 			anem_info[WIND_SPEED_SENSOR].value = ConvertValToWindOutput(type, anem_info[WIND_SPEED_SENSOR].value);
 
 			if (anem_info[WIND_SPEED_SENSOR].value > WIND_SPEED_TOLERANCE && anem_info[WIND_SPEED_SENSOR].value - WIND_SPEED_TOLERANCE > WIND_MAX_SPEED ) {
-				PRINTF("ERROR@WIND_SENSOR(SPEED): value function - Wind Speed exceeded maximum spec. value.\n");
-				anem_info[WIND_SPEED_SENSOR].value = 0;
-				return WIND_SENSOR_ERROR;
+				PRINTF("WARNING@WIND_SENSOR(SPEED): value function - Wind Speed exceeded maximum spec. value.\n");
 			}
-
 			PRINTF("Wind Sensor (SPEED): value function - value = %u cm/s\n", anem_info[WIND_SPEED_SENSOR].value);
-			
 			return anem_info[WIND_SPEED_SENSOR].value;
 			break;
 		case WIND_DIR_SENSOR:
@@ -225,8 +220,7 @@ value(int type){
 			PRINTF("Wind Sensor (DRCTN): value function - raw ADC value = %u\n", anem_info[WIND_SPEED_SENSOR].value);
 
 			if (anem_info[WIND_DIR_SENSOR].value > WIND_SENSOR_ADC_MAX_VAL)
-				anem_info[WIND_DIR_SENSOR].value = WIND_SENSOR_ADC_MAX_VAL;			
-
+				anem_info[WIND_DIR_SENSOR].value = WIND_SENSOR_ADC_MAX_VAL;
 			anem_info[WIND_DIR_SENSOR].value *= WIND_SENSOR_ADC_REF;
 			anem_info[WIND_DIR_SENSOR].value /= WIND_SENSOR_ADC_MAX_VAL;
 			PRINTF("Wind Sensor (DRCTN): value function - mv ADC value = %u\n", anem_info[WIND_DIR_SENSOR].value);

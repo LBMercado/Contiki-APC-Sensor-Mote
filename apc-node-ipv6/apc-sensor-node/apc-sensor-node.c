@@ -24,29 +24,66 @@
 #include "dev/air-quality-sensor.h"
 #include "dev/anemometer-sensor.h"
 /*---------------------------------------------------------------------------*/
-#define DEBUG_LOCAL 1
 #define DEBUG DEBUG_PRINT
 #include "net/ip/uip-debug.h"
 /*----------------------------------------------------------------------------------*/
 /* Collect data from sensors every 3 minutes */
-#define APC_SENSOR_NODE_READ_INTERVAL_SECONDS             180
-#define APC_SENSOR_NODE_COLLECTOR_ADV_INTERVAL_SECONDS    300
-#define APC_SENSOR_NODE_SINK_DEADTIME_SECONDS             600
+#define APC_SENSOR_NODE_READ_INTERVAL_SECONDS             15
+#define APC_SENSOR_NODE_COLLECTOR_ADV_INTERVAL_SECONDS    30
+#define APC_SENSOR_NODE_SINK_DEADTIME_SECONDS             60
 #define UIP_IP_BUF                                        ( (struct uip_ip_hdr*) & uip_buf[UIP_LLH_LEN] )
 /*----------------------------------------------------------------------------------*/
-//global variables
 static struct timer sink_dead_timer;
 static struct uip_udp_conn* collect_conn;
 static uip_ipaddr_t sink_addr;
+static uip_ipaddr_t sink_addr_pref;
 static sensor_reading_t sensor_readings[SENSOR_COUNT];
 static uint32_t seqNo;
 /*----------------------------------------------------------------------------------*/
 static int
+activate_sensor
+(uint8_t sensorType){
+	int retCode;
+	switch(sensorType){
+	case HUMIDITY_T:
+	case TEMPERATURE_T:
+		retCode = SENSORS_ACTIVATE(dht22);
+		return retCode != DHT22_ERROR ? OPERATION_SUCCESS : OPERATION_FAILED;
+		break;
+	case PM25_T:
+		retCode = pm25.configure(SENSORS_ACTIVE, PM25_ENABLE);
+		return retCode != PM25_ERROR ? OPERATION_SUCCESS : OPERATION_FAILED;
+		break;
+	case CO_T:
+		retCode = aqs_sensor.configure(SENSORS_ACTIVE, MQ7_SENSOR);
+		return retCode != AQS_ERROR ? OPERATION_SUCCESS : OPERATION_FAILED;
+		break;
+	case CO2_T:
+		retCode = aqs_sensor.configure(SENSORS_ACTIVE, MQ135_SENSOR);
+		return retCode != AQS_ERROR ? OPERATION_SUCCESS : OPERATION_FAILED;
+		break;
+	case O3_T:
+		retCode = aqs_sensor.configure(SENSORS_ACTIVE, MQ131_SENSOR);
+		return retCode != AQS_ERROR ? OPERATION_SUCCESS : OPERATION_FAILED;
+		break;
+	case WIND_SPEED_T:
+		retCode = anem_sensor.configure(SENSORS_ACTIVE, WIND_SPEED_SENSOR);
+		return retCode != WIND_SENSOR_ERROR ? OPERATION_SUCCESS : OPERATION_FAILED;
+		break;
+	case WIND_DRCTN_T:
+		retCode = anem_sensor.configure(SENSORS_ACTIVE, WIND_DIR_SENSOR);
+		return retCode != WIND_SENSOR_ERROR ? OPERATION_SUCCESS : OPERATION_FAILED;
+		break;
+	default:
+		PRINTF("activate_sensor: Unknown sensor type given.\n");
+		return OPERATION_FAILED;
+	}
+}
+/*----------------------------------------------------------------------------------*/
+static int 
 read_sensor
 (uint8_t sensorType, uint8_t index) {
-
 	int value1, value2;
-
 	switch(sensorType){
 		//HUMIDITY_T and TEMPERATURE_T are read at the same sensor
 	case HUMIDITY_T:
@@ -294,7 +331,6 @@ print_local_addresses(void)
 {
 	uint8_t i;
 	uint8_t state;
-
 	PRINTF("Mote IPv6 addresses: ");
 	for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
 		state = uip_ds6_if.addr_list[i].state;
@@ -313,7 +349,7 @@ print_local_addresses(void)
 /*----------------------------------------------------------------------------------*/
 static void
 net_join_as_collector
-(uip_ipaddr_t* sinkAddr)
+()
 {
 	node_data_t msg;
 	
@@ -321,11 +357,11 @@ net_join_as_collector
 	msg.type = COLLECTOR_ADV;
 	
 	PRINTF("Sending packet to sink (");
-	PRINT6ADDR(sinkAddr);
-	PRINTF(") with seq 0x%08lx, type %zu\n",
-		msg.seq, msg.type, msg.data);
+	PRINT6ADDR(&sink_addr);
+	PRINTF(") with seq 0x%08lx, type %hu, size %hu\n",
+		msg.seq, msg.type, sizeof(msg));
 	uip_udp_packet_sendto(collect_conn, &msg, sizeof(msg),
-		sinkAddr, UIP_HTONS(UDP_SINK_PORT));
+		&sink_addr, UIP_HTONS(UDP_SINK_PORT));
 }
 /*----------------------------------------------------------------------------------*/
 static void
@@ -340,12 +376,18 @@ tcpip_handler(void)
 		switch( msg->type ){
 			case COLLECTOR_ACK:
 				PRINTF("--Identified COLLECTOR_ACK, resetting dead timer for sink.\n");
+				if (!uip_ipaddr_cmp(&UIP_IP_BUF->srcipaddr,&sink_addr_pref)) {
+					uip_ipaddr_copy(&sink_addr_pref, &UIP_IP_BUF->srcipaddr);
+					PRINTF("Preferred sink address set to (");
+					PRINT6ADDR(&sink_addr_pref);
+					PRINTF(")\n");
+				}
 				timer_set(&sink_dead_timer, CLOCK_SECOND * APC_SENSOR_NODE_SINK_DEADTIME_SECONDS);
 				break;
 			case DATA_REQUEST:
 				PRINTF("--Identified DATA_REQUEST, proceeding to data delivery.\n");
 				/* make sure dead timer hasn't expired, and sink address matches source address */
-				if ( !timer_expired(&sink_dead_timer) && uip_ipaddr_cmp( &UIP_IP_BUF->srcipaddr, &sink_addr ) ){
+				if ( !timer_expired(&sink_dead_timer) && uip_ipaddr_cmp( &UIP_IP_BUF->srcipaddr, &sink_addr_pref ) ){
 					for (index = 0; index < SENSOR_COUNT; index++){
 						msg->seq = ++seqNo;
 						msg->type = SENSOR_TYPES[index];
@@ -353,8 +395,8 @@ tcpip_handler(void)
 						
 						PRINTF("Sending packet to sink (");
 						PRINT6ADDR(&sink_addr);
-						PRINTF(") with seq 0x%08lx, type %zu, data %s\n",
-							msg->seq, msg->type, msg->data);
+						PRINTF(") with seq 0x%08lx, type %hu, data %s, size %hu\n",
+							msg->seq, msg->type, msg->data, sizeof(*msg));
 						uip_udp_packet_sendto(collect_conn, msg, sizeof(*msg),
 							&sink_addr, UIP_HTONS(UDP_SINK_PORT));
 					}
@@ -378,7 +420,6 @@ PROCESS_THREAD(apc_sensor_node_collect_adv_process, ev, data)
 {
 	//initialization
 	static struct etimer et_adv;
-
 	PROCESS_EXITHANDLER();
 	PROCESS_BEGIN();
 	PRINTF("APC Sensor Node (Collector Advertise) begins...\n");
@@ -391,7 +432,7 @@ PROCESS_THREAD(apc_sensor_node_collect_adv_process, ev, data)
 		PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et_adv) );
 		leds_on(LEDS_BLUE);
 		PRINTF("apc_sensor_node_collect_adv_process: sending collector advertise to sink.\n");
-		net_join_as_collector(&sink_addr);
+		net_join_as_collector();
 		etimer_reset(&et_adv);
 	}
 	
@@ -401,14 +442,18 @@ PROCESS_THREAD(apc_sensor_node_collect_adv_process, ev, data)
 PROCESS_THREAD(apc_sensor_node_network_init_process, ev, data)
 {
 	//initialization
-	uip_ipaddr_t sink_addr, collectAddr;
-
+	uip_ipaddr_t collectAddr;
 	PROCESS_EXITHANDLER();
 	PROCESS_BEGIN();
 	PRINTF("APC Sensor Node (Network Initialization) begins...\n");
 	seqNo = 1;
 	leds_off(LEDS_ALL);
 	leds_on(LEDS_GREEN);
+	
+	/*set address of this node*/
+	uip_ip6addr(&collectAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
+	uip_ds6_set_addr_iid(&collectAddr, &uip_lladdr);
+	uip_ds6_addr_add(&collectAddr, 0, ADDR_AUTOCONF);
 	
 	/* set server/sink address */
 	#if UIP_CONF_ROUTER
@@ -447,11 +492,6 @@ PROCESS_THREAD(apc_sensor_node_network_init_process, ev, data)
 	#endif
 	#endif
 	
-	/*set address of this node*/
-	uip_ip6addr(&collectAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
-	uip_ds6_set_addr_iid(&collectAddr, &uip_lladdr);
-	uip_ds6_addr_add(&collectAddr, 0, ADDR_AUTOCONF);
-	
 	/* new connection with remote host */
 	collect_conn = udp_new(NULL, UIP_HTONS(UDP_SINK_PORT), NULL);
 	if(collect_conn == NULL) {
@@ -486,7 +526,6 @@ PROCESS_THREAD(apc_sensor_node_collect_gather_process, ev, data)
 	//initialization
 	static struct etimer et_collect;
 	uint8_t index;
-
 	PROCESS_EXITHANDLER();
 	PROCESS_BEGIN();
 	PRINTF("APC Sensor Node (Collector Gather) begins...\n");
@@ -505,61 +544,23 @@ PROCESS_THREAD(apc_sensor_node_collect_gather_process, ev, data)
 		PRINTF("apc_sensor_node_collect_gather_process: collection finished\n");
 		etimer_reset(&et_collect);
 	}
-	
 	PROCESS_END();
 }
 /*----------------------------------------------------------------------------------*/
 PROCESS_THREAD(apc_sensor_node_en_sensors_process, ev, data)
 {
 	//initialization
-	#if DEBUG_LOCAL
-	int retCode = 0;
-	#endif
 	uint8_t i;
-
 	PROCESS_EXITHANDLER();
 	PROCESS_BEGIN();
 	PRINTF("APC Sensor Node (Sensor Initialization) begins...\n");
-
-	//initialize sensor types
+	leds_on(LEDS_YELLOW);
+	//initialize sensor types and configure
 	for (i = 0; i < SENSOR_COUNT; i++) {
 		sensor_readings[i].type = SENSOR_TYPES[i];
+		PRINTF("apc_sensor_node_en_sensors_process: Sensor(0x%01x): %s\n", sensor_readings[i].type,
+		activate_sensor(sensor_readings[i].type) == OPERATION_FAILED ? "ERROR\0" : "OK\0" );
 	}
-
-	PRINTF("apc_sensor_node_en_sensors_process: enabling sensors...\n");
-	leds_on(LEDS_YELLOW);
-	#if DEBUG_LOCAL
-	retCode = SENSORS_ACTIVATE(dht22);
-	PRINTF("apc_sensor_node_en_sensors_process: TEMPERATURE_T & HUMIDITY_T: %s\n", 
-		retCode == DHT22_ERROR ? "ERROR\0" : "OK\0" );
-	retCode = pm25.configure(SENSORS_ACTIVE, PM25_ENABLE);
-	PRINTF("apc_sensor_node_en_sensors_process: PM25_T: %s\n",
-		retCode == PM25_ERROR ? "ERROR\0" : "OK\0");
-	retCode = aqs_sensor.configure(SENSORS_ACTIVE, MQ7_SENSOR);
-	PRINTF("apc_sensor_node_en_sensors_process: CO_T: %s\n",
-		retCode == AQS_ERROR ? "ERROR\0" : "OK\0");
-	retCode = aqs_sensor.configure(SENSORS_ACTIVE, MQ131_SENSOR);
-	PRINTF("apc_sensor_node_en_sensors_process: O3_T: %s\n",
-		retCode == AQS_ERROR ? "ERROR\0" : "OK\0");
-	retCode = aqs_sensor.configure(SENSORS_ACTIVE, MQ135_SENSOR);
-	PRINTF("apc_sensor_node_en_sensors_process: CO2_T: %s\n",
-		retCode == AQS_ERROR ? "ERROR\0" : "OK\0");
-	retCode = anem_sensor.configure(SENSORS_ACTIVE, WIND_SPEED_SENSOR);
-	PRINTF("apc_sensor_node_en_sensors_process: WIND_SPEED_T: %s\n",
-		retCode == WIND_SENSOR_ERROR ? "ERROR\0" : "OK\0");
-	retCode = anem_sensor.configure(SENSORS_ACTIVE, WIND_DIR_SENSOR);
-	PRINTF("apc_sensor_node_en_sensors_process: WIND_DRCTN_T: %s\n",
-		retCode == WIND_SENSOR_ERROR ? "ERROR\0" : "OK\0");
-	PRINTF("apc_sensor_node_en_sensors_process: sensors enabled\n");
-	#else
-	SENSORS_ACTIVATE(dht22);
-	pm25.configure(SENSORS_ACTIVE, PM25_ENABLE);
-	aqs_sensor.configure(SENSORS_ACTIVE, MQ7_SENSOR);
-	aqs_sensor.configure(SENSORS_ACTIVE, MQ131_SENSOR);
-	aqs_sensor.configure(SENSORS_ACTIVE, MQ135_SENSOR);
-	anem_sensor.configure(SENSORS_ACTIVE, WIND_SPEED_SENSOR);
-	anem_sensor.configure(SENSORS_ACTIVE, WIND_DIR_SENSOR);
-	#endif
 	leds_off(LEDS_YELLOW);
 	process_start(&apc_sensor_node_collect_gather_process, NULL);
 	PROCESS_END();

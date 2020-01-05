@@ -16,18 +16,17 @@ read_sensor
 
 static void
 net_join_as_collector
-(uip_ipaddr_t* sinkAddr);
+();
 
-static const uint8_t 
+static const uint8_t
 SENSOR_TYPES[SENSOR_COUNT] =
 {
-  TEMPERATURE_T, //unit in Deg. Celsius
-  HUMIDITY_T, //unit in %RH
-  PM25_T, //unit in ppm, compute to microgram per m3 at processing server
-  CO_T, //unitless (ratio in milli scale), compute to ppm at processing server
-  /*NO2_T, //unit in ppm, unused */
-  CO2_T, //unitless (ratio in milli scale), compute to ppm at processing server
-  O3_T, //unitless (ratio in milli scale), compute to ppm at processing server
-  WIND_SPEED_T, //unit in m/s
-  WIND_DRCTN_T //may be N, S, E, W and their combinations
+	TEMPERATURE_T, //unit in Deg. Celsius
+	HUMIDITY_T, //unit in %RH
+	PM25_T, //unit in ppm, compute to microgram per m3 at processing server
+	CO_T, //unitless (ratio in milli scale), compute to ppm at processing server
+	CO2_T, //unitless (ratio in milli scale), compute to ppm at processing server
+	O3_T, //unitless (ratio in milli scale), compute to ppm at processing server
+	WIND_SPEED_T, //unit in m/s
+	WIND_DRCTN_T //may be N, S, E, W and their combinations
 };

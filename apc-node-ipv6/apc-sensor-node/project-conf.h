@@ -1,13 +1,9 @@
 #ifndef PROJECT_CONF_H_
 #define PROJECT_CONF_H_
 
-//port to use for listening/sending messages
-#define UDP_COLLECT_PORT                2001
-#define UDP_SINK_PORT                   2002
-#define UIP_CONF_ROUTER_64_BIT          1
-#define UIP_CONF_ROUTER_16_BIT          2
-#define UIP_CONF_ROUTER_MODE            UIP_CONF_ROUTER_16_BIT
-
+/*----------------------------------------------------------------*/
+/*------------------SENSOR-CONFIGURATION-------------------------*/
+/*----------------------------------------------------------------*/
 //enable the disabled ADC channels (ADC1 and ADC3 are enabled by default)
 //(refer to board layout for pin configuration)
 #define ADC_SENSORS_CONF_ADC2_PIN       4
@@ -15,21 +11,20 @@
 #define ADC_SENSORS_CONF_ADC5_PIN       7
 
 //disable the user button and bootloader, enable ADC6 (the two features are mutually exclusive)
-#define FLASH_CCA_CONF_BOOTLDR_BACKDOOR 0
-#define ADC_SENSORS_CONF_ADC6_PIN       3
-#define ADC_SENSORS_CONF_MAX            6
-
-/* apc-sensor-node config */
+// WARNING: disabling the bootloader disables reprogramming through USB
+/*#define FLASH_CCA_CONF_BOOTLDR_BACKDOOR 1
+ *#define ADC_SENSORS_CONF_ADC6_PIN       3
+ *#define ADC_SENSORS_CONF_MAX            6
+ */
 /* DHT22 (Temperature/Humidity)
-	D1 (Digital Input/Output) 
-*/
+ * D1 (GPIO)
+ */
 #define DHT22_CONF_PIN                  1
 #define DHT22_CONF_PORT                 GPIO_D_NUM
 
-/* 
-   GP2Y1014AUOF -> A5 (ADC Input) (ADC1)
-		-> D2 (Digital Output, Enable Sensor LED to Measure)
-		(PM2.5)
+/* GP2Y1014AUOF (PM2.5/Dust)
+ *  -> A5 (ADC Input) (ADC1)
+ *  -> D2 (Digital Output, Enable Sensor LED to Measure)
  */
 
 #define PM25_SENSOR_LED_CONF_CTRL_PIN       2
@@ -54,13 +49,21 @@
 // Wind Direction Anemometer -> PA3 (ADC6) (Button is Disabled)
 #define WIND_DIR_SENSOR_CONF_CTRL_PIN   ADC_SENSORS_ADC6_PIN
 
-/* reference resistances measured at clean air
-*  set to zero to force calibration
+/* reference resistances measured on clean air
+ * set to zero to force calibration
 */
-#define MQ7_CONF_RO_CLEAN_AIR           500
-#define MQ131_CONF_RO_CLEAN_AIR         500
-#define MQ135_CONF_RO_CLEAN_AIR         500
-
+#define MQ7_CONF_RO_CLEAN_AIR           21
+#define MQ131_CONF_RO_CLEAN_AIR         21
+#define MQ135_CONF_RO_CLEAN_AIR         21
+/*----------------------------------------------------------------*/
+/*------------------------IP-CONFIGURATION------------------------*/
+/*----------------------------------------------------------------*/
+#define UDP_COLLECT_PORT                2001
+#define UDP_SINK_PORT                   2002
+#define UIP_CONF_ROUTER_64_BIT          1
+#define UIP_CONF_ROUTER_16_BIT          2
+#define UIP_CONF_ROUTER_LL_DERIVED      3
+#define UIP_CONF_ROUTER_MODE            UIP_CONF_ROUTER_64_BIT
 /*----------------------------------------------------------------*/
 /*This code was taken from rpl-collect example found in example/ipv6*/
 /*----------------------------------------------------------------*/

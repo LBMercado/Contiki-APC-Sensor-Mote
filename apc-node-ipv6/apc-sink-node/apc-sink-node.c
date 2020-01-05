@@ -22,13 +22,6 @@
 /* Project Sourcefiles */
 #include "apc-sink-node.h"
 /*---------------------------------------------------------------------------*/
-#define DEBUG_LOCAL 1
-#if DEBUG_LOCAL
-#define PRINTF(...) printf(__VA_ARGS__)
-#else
-#define PRINTF(...)
-#endif
-/*---------------------------------------------------------------------------*/
 #define DEBUG DEBUG_PRINT
 #include "net/ip/uip-debug.h"
 /*---------------------------------------------------------------------------*/
@@ -76,8 +69,8 @@ summarize_readings_callback(void* arg)
 	PRINTF("\n\n");
 	PRINTF("------------------\n");
 	PRINTF("SUMMARY - elapsed time %lu:%lu:%lu:%lu\n", 
-	(elapsedSeconds / 60 * 60 * 24 ) % 7, //days,
-	(elapsedSeconds / 60 * 60) % 24, //hours
+	(elapsedSeconds / (60 * 60 * 24) ) % 7, //days,
+	(elapsedSeconds / (60 * 60) ) % 24, //hours
 	(elapsedSeconds / 60) % 60, //minutes
 	elapsedSeconds % 60 //seconds
 	);
@@ -99,7 +92,6 @@ summarize_readings_callback(void* arg)
 		PRINTF("Wind Direction: %s\n", n->windDir);
 	}
 	PRINTF("------------------\n");
-	PRINTF("\n\n");
 }
 /*---------------------------------------------------------------------------*/
 static void
@@ -246,7 +238,7 @@ tcpip_handler(void)
 		PRINTF("apc_sink_node: DATA recv from ");
 		PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
 		PRINTF("\n");
-		PRINTF("Message Type: %zu, Seq. No: %lu", node_message->type, node_message->seq);
+		PRINTF("Message Type: %hu, Seq. No: 0x%08lx, Size: %hu\n", node_message->type, node_message->seq, sizeof(*node_message));
 		//check actual message type
 		switch(node_message->type){
 		case COLLECTOR_ADV:
@@ -284,7 +276,6 @@ tcpip_handler(void)
 		case WIND_SPEED_T:
 		case WIND_DRCTN_T:
 			PRINTF("--valid sensor data identified\n");
-
 			update_sensor_node_reading(&UIP_IP_BUF->srcipaddr, &sensor_reading);
 			break;
 		default:
@@ -325,7 +316,7 @@ AUTOSTART_PROCESSES(&apc_sink_node_server_process, &apc_sink_node_summarizer_pro
 PROCESS_THREAD(apc_sink_node_server_process, ev, data)
 {
 	//initialization
-	uip_ipaddr_t routerAddr;
+	uip_ipaddr_t sink_addr;
 	struct uip_ds6_addr *root_if;
 	
 	PROCESS_BEGIN();
@@ -354,34 +345,33 @@ PROCESS_THREAD(apc_sink_node_server_process, ev, data)
 	 
 	#if UIP_CONF_ROUTER_MODE == UIP_CONF_ROUTER_64_BIT
 	/* Mode 1 - 64 bits inline */
-	uip_ip6addr(&routerAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 1);
+	uip_ip6addr(&sink_addr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 1);
 	PRINTF("Server set as (");
 	PRINT6ADDR(&sink_addr);
 	PRINTF(") 64-bit inline mode \n");
 	#elif UIP_CONF_ROUTER_MODE == UIP_CONF_ROUTER_16_BIT
 	/* Mode 2 - 16 bits inline */
-	uip_ip6addr(&routerAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0x00ff, 0xfe00, 1);
 	uip_ip6addr(&sink_addr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0x00ff, 0xfe00, 1);
 	PRINTF("Server set as (");
 	PRINT6ADDR(&sink_addr);
 	PRINTF(") 16-bit inline mode \n");
 	#else
 	/* Mode 3 - derived from link local (MAC) address */
-	uip_ip6addr(&routerAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
-	uip_ds6_set_addr_iid(&routerAddr, &uip_lladdr);
+	uip_ip6addr(&sink_addr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
+	uip_ds6_set_addr_iid(&sink_addr, &uip_lladdr);
 	PRINTF("Server set as (");
 	PRINT6ADDR(&sink_addr);
 	PRINTF(") ll-derived mode \n");
 	#endif
 	
-	uip_ds6_addr_add(&routerAddr, 0, ADDR_MANUAL);
-	root_if = uip_ds6_addr_lookup(&routerAddr);
+	uip_ds6_addr_add(&sink_addr, 0, ADDR_MANUAL);
+	root_if = uip_ds6_addr_lookup(&sink_addr);
 	if(root_if != NULL) {
 		rpl_dag_t* dag;
 		
-		dag = rpl_set_root(RPL_DEFAULT_INSTANCE,(uip_ip6addr_t *)&routerAddr);
-		uip_ip6addr(&routerAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
-		rpl_set_prefix(dag, &routerAddr, 64);
+		dag = rpl_set_root(RPL_DEFAULT_INSTANCE,(uip_ip6addr_t *)&sink_addr);
+		uip_ip6addr(&sink_addr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
+		rpl_set_prefix(dag, &sink_addr, 64);
 		
 		PRINTF("created a new RPL dag\n");
 	} else {

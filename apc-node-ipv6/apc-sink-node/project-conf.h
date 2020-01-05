@@ -1,12 +1,14 @@
 #ifndef PROJECT_CONF_H_
 #define PROJECT_CONF_H_
-//port to use for listening/sending messages
-#define UDP_COLLECT_PORT       2001
-#define UDP_SINK_PORT          2002
-#define UIP_CONF_ROUTER_64_BIT 1
-#define UIP_CONF_ROUTER_16_BIT 2
-#define UIP_CONF_ROUTER_MODE   UIP_CONF_ROUTER_16_BIT
-
+/*----------------------------------------------------------------*/
+/*------------------------IP-CONFIGURATION------------------------*/
+/*----------------------------------------------------------------*/
+#define UDP_COLLECT_PORT                2001
+#define UDP_SINK_PORT                   2002
+#define UIP_CONF_ROUTER_64_BIT          1
+#define UIP_CONF_ROUTER_16_BIT          2
+#define UIP_CONF_ROUTER_LL_DERIVED      3
+#define UIP_CONF_ROUTER_MODE            UIP_CONF_ROUTER_64_BIT
 /*----------------------------------------------------------------*/
 /*This code was taken from rpl-collect example found in example/ipv6*/
 /*----------------------------------------------------------------*/

@@ -14,7 +14,7 @@
 #define PM25_SENSOR_LED_PIN_MASK    GPIO_PIN_MASK(PM25_SENSOR_LED_CTRL_PIN)
 #define PM25_SENSOR_OUT_PIN_MASK    GPIO_PIN_MASK(PM25_SENSOR_OUT_CTRL_PIN)
 /*---------------------------------------------------------------------------*/
-#define DEBUG 1
+#define DEBUG 0
 #if DEBUG
 #define PRINTF(...) printf(__VA_ARGS__)
 #else
