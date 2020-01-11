@@ -6,12 +6,13 @@ The following codes written are used to program the motes to read from the senso
 
 ## Two implementations are available here:
 * the **rime** implementation is a non-ip based network used for testing purposes with no connectivity outside its local network.
-* the **ipv6** implementation provides connectivity outside its local network through a *border router* which is also the sink mote.
+* the **ipv6** implementation provides connectivity outside its local network through a *border router* ~~which is also the sink mote.~~
 	- the border router is typically connected through a USB interface on a computer or the Raspberry Pi in this case.
 
-## There are two types of motes in this mote network:
+## There are three types of motes in this mote network:
 1. APC-Sensor-Node -> Collector Mote
-2. APC-Sink-Node -> Sink Mote & Border Router(Not Implemented Yet)
+2. APC-Sink-Node -> Sink Mote ~~& Border Router(Not Implemented Yet)~~
+3. Border Router
 
 ### Sensors Used
 * DHT22 (Temperature and Humidity)
