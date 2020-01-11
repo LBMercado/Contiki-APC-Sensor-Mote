@@ -11,6 +11,9 @@
 #include "net/rpl/rpl.h"
 #include "net/linkaddr.h"
 #include "net/netstack.h"
+/* Utility Libraries */
+#include "lib/list.h"
+#include "lib/memb.h"
 /* Contiki Dev and Utilities */
 #include "dev/leds.h"
 #include "dev/button-sensor.h"
@@ -21,6 +24,7 @@
 #include "sys/stimer.h"
 /* Project Sourcefiles */
 #include "apc-sink-node.h"
+#include "mqtt-handler.h"
 /*---------------------------------------------------------------------------*/
 #define DEBUG DEBUG_PRINT
 #include "net/ip/uip-debug.h"
@@ -35,6 +39,14 @@
 /*---------------------------------------------------------------------------*/
 static struct uip_udp_conn* sink_conn;
 static uint32_t seq_id;
+static uip_ipaddr_t prefix;
+/*---------------------------------------------------------------------------*/
+/* This MEMB() definition defines a memory pool from which we allocate
+   sensor node entries. */
+MEMB(sensor_nodes_memb, sensor_node_t, MAX_SENSOR_NODES);
+/* The sensor_nodes_list is a Contiki list that holds the neighbors we
+   have seen thus far. */
+LIST(sensor_nodes_list);
 /*---------------------------------------------------------------------------*/
 static void
 broadcast_data_request(void)
@@ -43,15 +55,14 @@ broadcast_data_request(void)
 	struct sensor_node *n;
 
 	msg.type = DATA_REQUEST;
-	msg.seq = seq_id;
+	msg.seq = seq_id++;
 
 	//iterate through each sensor node
 	for(n = list_head(sensor_nodes_list); n != NULL; n = list_item_next(n)) {
-		PRINTF("Sending a DATA_REQUEST to sensor node (");				
+		PRINTF("Sending a DATA_REQUEST to sensor node (");
 		PRINT6ADDR(&n->addr);
 		PRINTF(") "); 
-		PRINTF("with seq 0x%08lu\n", msg.seq);		
-		
+		PRINTF("with seq 0x%08lu\n", msg.seq);
 		uip_ipaddr_copy(&sink_conn->ripaddr, &n->addr);
 		uip_udp_packet_send(sink_conn, &msg, sizeof(msg));
 	
@@ -247,9 +258,12 @@ tcpip_handler(void)
 			PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
 			PRINTF("\n");
 			add_sensor_node(&UIP_IP_BUF->srcipaddr);
+			//store a new copy of the sensor node for mqtt
+			if ( mqtt_store_sensor_data(&UIP_IP_BUF->srcipaddr, NULL) == MQTT_OPFAILURE )
+				PRINTF("Failed to add sensor node to MQTT.\n");
 			
 			node_message->type = COLLECTOR_ACK;
-			
+			node_message->seq = seq_id++;
 			PRINTF("apc_sink_node: sending reply\n");
 			//set dest ip address and send packet
 			uip_ipaddr_copy(&sink_conn->ripaddr, &UIP_IP_BUF->srcipaddr);
@@ -277,6 +291,8 @@ tcpip_handler(void)
 		case WIND_DRCTN_T:
 			PRINTF("--valid sensor data identified\n");
 			update_sensor_node_reading(&UIP_IP_BUF->srcipaddr, &sensor_reading);
+			if ( mqtt_store_sensor_data(&UIP_IP_BUF->srcipaddr, &sensor_reading) == MQTT_OPFAILURE )
+				PRINTF("Failed to add sensor node to MQTT.\n");
 			break;
 		default:
 			PRINTF("--unidentified header detected\n");
@@ -285,8 +301,8 @@ tcpip_handler(void)
 	}
 }
 /*---------------------------------------------------------------------------*/
-static void
-print_local_addresses(void)
+void
+print_local_addresses(void* data)
 {
 	int i;
 	uint8_t state;
@@ -306,32 +322,12 @@ print_local_addresses(void)
 		}
 	}
 }
-/*---------------------------------------------------------------------------*/
-PROCESS(apc_sink_node_server_process, "APC Sink Node (Server) Process Handler");
-PROCESS(apc_sink_node_data_request_process, "APC Sink Node (Data Request) Process Handler");
-PROCESS(apc_sink_node_summarizer_process, "APC Sink Node (Summarizer) Process Handler");
-/*---------------------------------------------------------------------------*/
-AUTOSTART_PROCESSES(&apc_sink_node_server_process, &apc_sink_node_summarizer_process);
-/*---------------------------------------------------------------------------*/
-PROCESS_THREAD(apc_sink_node_server_process, ev, data)
+void
+set_local_ip_addresses(uip_ipaddr_t* prefix_64, uip_ipaddr_t* sinkAddr)
 {
-	//initialization
-	uip_ipaddr_t sink_addr;
-	struct uip_ds6_addr *root_if;
-	
-	PROCESS_BEGIN();
-	
-	PROCESS_PAUSE();
-	
-	SENSORS_ACTIVATE(button_sensor);
-	
-	PRINTF("APC Sink Node (Server) begins...\n");
-	
-	seq_id = 0;
-	
 	#if UIP_CONF_ROUTER
 	/* The choice of server address determines its 6LoWPAN header compression.
-	 * Obviously the choice made here must also be selected in apc-sensor-node.
+	 * Obviously the choice made here must also be selected in apc-sink-node.
 	 *
 	 * For correct Wireshark decoding using a sniffer, add the /64 prefix to the
 	 * 6LowPAN protocol preferences,
@@ -343,47 +339,114 @@ PROCESS_THREAD(apc_sink_node_server_process, ev, data)
 	 * uncompressed addresses.
 	 */
 	 
-	#if UIP_CONF_ROUTER_MODE == UIP_CONF_ROUTER_64_BIT
+	#if UIP_CONF_SINK_MODE == UIP_CONF_SINK_64_BIT
 	/* Mode 1 - 64 bits inline */
-	uip_ip6addr(&sink_addr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 1);
-	PRINTF("Server set as (");
-	PRINT6ADDR(&sink_addr);
+	if (prefix_64 == NULL || uip_is_addr_unspecified(prefix_64))
+		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0xff00);
+	else
+		uip_ip6addr(sinkAddr, UIP_HTONS(prefix_64->u16[0]), UIP_HTONS(prefix_64->u16[1]), UIP_HTONS(prefix_64->u16[2]), UIP_HTONS(prefix_64->u16[3]), 0, 0, 0, 0xff00);
+	PRINTF("Sink set as (");
+	PRINT6ADDR(sinkAddr);
 	PRINTF(") 64-bit inline mode \n");
-	#elif UIP_CONF_ROUTER_MODE == UIP_CONF_ROUTER_16_BIT
+	#elif UIP_CONF_SINK_MODE == UIP_CONF_SINK_16_BIT
 	/* Mode 2 - 16 bits inline */
-	uip_ip6addr(&sink_addr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0x00ff, 0xfe00, 1);
-	PRINTF("Server set as (");
-	PRINT6ADDR(&sink_addr);
+	if (prefix_64 == NULL || uip_is_addr_unspecified(prefix_64))
+		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0x00ff, 0xfe00, 0xff00);
+	else
+		uip_ip6addr(sinkAddr, UIP_HTONS(prefix_64->u16[0]), UIP_HTONS(prefix_64->u16[1]), UIP_HTONS(prefix_64->u16[2]), UIP_HTONS(prefix_64->u16[3]), 0, 0x00ff, 0xfe00, 0xff00);
+	PRINTF("Sink set as (");
+	PRINT6ADDR(sinkAddr);
 	PRINTF(") 16-bit inline mode \n");
-	#else
+	#else //UIP_CONF_SINK_MODE == UIP_CONF_SINK_LL_DERIVED
 	/* Mode 3 - derived from link local (MAC) address */
-	uip_ip6addr(&sink_addr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
-	uip_ds6_set_addr_iid(&sink_addr, &uip_lladdr);
-	PRINTF("Server set as (");
-	PRINT6ADDR(&sink_addr);
-	PRINTF(") ll-derived mode \n");
-	#endif
-	
-	uip_ds6_addr_add(&sink_addr, 0, ADDR_MANUAL);
-	root_if = uip_ds6_addr_lookup(&sink_addr);
-	if(root_if != NULL) {
-		rpl_dag_t* dag;
-		
-		dag = rpl_set_root(RPL_DEFAULT_INSTANCE,(uip_ip6addr_t *)&sink_addr);
-		uip_ip6addr(&sink_addr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
-		rpl_set_prefix(dag, &sink_addr, 64);
-		
-		PRINTF("created a new RPL dag\n");
-	} else {
-		PRINTF("failed to create a new RPL DAG\n");
+	if (prefix_64 == NULL || uip_is_addr_unspecified(prefix_64)){
+		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
 	}
+	else{
+		memcpy(sinkAddr, prefix_64, 16); //copy 64-bit prefix
+		uip_ip6addr(sinkAddr, UIP_HTONS(prefix_64->u16[0]), UIP_HTONS(prefix_64->u16[1]), UIP_HTONS(prefix_64->u16[2]), UIP_HTONS(prefix_64->u16[3]), 0, 0, 0, 0);
+	}
+	uip_ds6_set_addr_iid(sinkAddr, &uip_lladdr);
+	PRINTF("Sink set as (");
+	PRINT6ADDR(sinkAddr);
+	PRINTF(") ll-derived mode \n");
+	#endif /* UIP_CONF_SINK_MODE */
+	uip_ds6_addr_add(sinkAddr, 0, ADDR_AUTOCONF);
 	#endif /* UIP_CONF_ROUTER */
+}
+/*----------------------------------------------------------------------------------*/
+void
+set_remote_ip_addresses(uip_ipaddr_t* prefix_64, uip_ipaddr_t* sinkAddr)
+{
+	/* this node will get collector addresses on the fly, no need to initialize */
+}
+/*----------------------------------------------------------------------------------*/
+void
+update_ip_addresses_prefix(void* prefix_64)
+{
+	uip_ipaddr_t* pref;
+	uip_ipaddr_t sinkAddr;
 	
-	print_local_addresses();
+	if (prefix_64 == NULL)
+		return;
+	pref = (uip_ipaddr_t*)prefix_64;
+	//don't do anything if they are the same or unspecified
+	if (!uip_ipaddr_cmp(pref, &prefix) && !uip_is_addr_unspecified(pref)) 
+	{
+		PRINTF("Prefix updated from (");
+		PRINT6ADDR(&prefix);
+		PRINTF(") to (");
+		PRINT6ADDR(pref);
+		PRINTF(")\n");
+		memcpy(&prefix, pref, 16); //copy 64-bit prefix
+		/* set address of this node */
+		set_local_ip_addresses(&prefix, &sinkAddr);
+	}
+}
+/*---------------------------------------------------------------------------*/
+PROCESS(apc_sink_node_server_process, "APC Sink Node (Server) Process Handler");
+PROCESS(apc_sink_node_data_request_process, "APC Sink Node (Data Request) Process Handler");
+PROCESS(apc_sink_node_summarizer_process, "APC Sink Node (Summarizer) Process Handler");
+/*---------------------------------------------------------------------------*/
+AUTOSTART_PROCESSES(&apc_sink_node_server_process, &apc_sink_node_summarizer_process);
+/*---------------------------------------------------------------------------*/
+PROCESS_THREAD(apc_sink_node_server_process, ev, data)
+{
+	//initialization
+	uip_ipaddr_t sink_addr;
+	rpl_dag_t* dag;
+	static struct ctimer ct_net_print;
+	static struct ctimer ct_update_addr;
+	static uip_ipaddr_t curPrefix;
+	PROCESS_BEGIN();
+	
+	PROCESS_PAUSE();
+	
+	SENSORS_ACTIVATE(button_sensor);
+	
+	PRINTF("APC Sink Node (Server) begins...\n");
+	uip_create_unspecified(&prefix);
+	
+	seq_id = 0;
+	
+	/* get prefix from DAG */
+	dag = rpl_get_any_dag();
+	if (dag != NULL && !uip_is_addr_unspecified(&dag->prefix_info.prefix) ){
+		uip_ip6addr_copy(&prefix, &dag->prefix_info.prefix);
+		PRINTF("DAG Prefix: ");
+		PRINT6ADDR(&prefix);
+		PRINTF("\n");
+	}
+	else{
+		PRINTF("DAG Prefix not set.\n");
+	}
+	
+	set_local_ip_addresses(&prefix, &sink_addr);
+	print_local_addresses(NULL);
 	
 	/* The data sink runs with a 100% duty cycle in order to ensure high 
 	packet reception rates. */
-	NETSTACK_MAC.off(1);	
+	NETSTACK_MAC.off(1);
 	
 	sink_conn = udp_new(NULL, UIP_HTONS(UDP_COLLECT_PORT), NULL);
 	if(sink_conn == NULL) {
@@ -392,11 +455,14 @@ PROCESS_THREAD(apc_sink_node_server_process, ev, data)
 	}
 	udp_bind(sink_conn, UIP_HTONS(UDP_SINK_PORT));
 
-	PRINTF("Created a server connection with remote address ");
+	PRINTF("Created a sink connection with remote address ");
 	PRINT6ADDR(&sink_conn->ripaddr);
 	PRINTF(" local/remote port %u/%u\n", UIP_HTONS(sink_conn->lport),
 			 UIP_HTONS(sink_conn->rport));
 	process_start(&apc_sink_node_data_request_process, NULL);
+	process_start(&mqtt_handler_process, NULL);
+	ctimer_set(&ct_net_print, CLOCK_SECOND * LOCAL_ADDR_PRINT_INTERVAL, print_local_addresses, NULL);
+	ctimer_set(&ct_update_addr, CLOCK_SECOND * PREFIX_UPDATE_INTERVAL, update_ip_addresses_prefix, &curPrefix);
 	while(1){
 		PROCESS_YIELD();
 		if(ev == tcpip_event) {
@@ -404,6 +470,22 @@ PROCESS_THREAD(apc_sink_node_server_process, ev, data)
 		} else if (ev == sensors_event && data == &button_sensor) {
 			PRINTF("Initiating global repair\n");
 			rpl_repair_root(RPL_DEFAULT_INSTANCE);
+		}
+		if(ctimer_expired(&ct_net_print))
+			ctimer_reset(&ct_net_print);
+		if(ctimer_expired(&ct_update_addr)) {
+			/* get prefix from DAG */
+			dag = rpl_get_any_dag();
+			if (dag != NULL && !uip_is_addr_unspecified(&dag->prefix_info.prefix) ){
+				uip_ip6addr_copy(&curPrefix, &dag->prefix_info.prefix);
+				PRINTF("DAG Prefix: ");
+				PRINT6ADDR(&curPrefix);
+				PRINTF("\n");
+			}
+			else{
+				PRINTF("DAG missing or prefix not set.\n");
+			}
+			ctimer_reset(&ct_update_addr);
 		}
 	}
 	
