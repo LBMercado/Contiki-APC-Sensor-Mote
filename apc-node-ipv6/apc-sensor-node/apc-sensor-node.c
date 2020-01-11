@@ -18,6 +18,7 @@
 #include "dev/pm25-sensor.h"
 #include "dev/leds.h"
 #include "sys/etimer.h"
+#include "sys/ctimer.h"
 #include "sys/timer.h"
 /* Project Sourcefiles */
 #include "apc-sensor-node.h"
@@ -37,6 +38,7 @@ static struct timer sink_dead_timer;
 static struct uip_udp_conn* collect_conn;
 static uip_ipaddr_t sink_addr;
 static uip_ipaddr_t sink_addr_pref;
+static uip_ipaddr_t prefix;
 static sensor_reading_t sensor_readings[SENSOR_COUNT];
 static uint32_t seqNo;
 /*----------------------------------------------------------------------------------*/
@@ -326,8 +328,8 @@ read_sensor
 	}
 }
 /*---------------------------------------------------------------------------*/
-static void
-print_local_addresses(void)
+void
+print_local_addresses(void* data)
 {
 	uint8_t i;
 	uint8_t state;
@@ -409,6 +411,97 @@ tcpip_handler(void)
 	}
 }
 /*----------------------------------------------------------------------------------*/
+void
+set_local_ip_addresses(uip_ipaddr_t* prefix_64, uip_ipaddr_t* collectorAddr)
+{
+	if (prefix_64 != NULL && !uip_is_addr_unspecified(prefix_64)){
+		memcpy(collectorAddr, prefix_64, 16); //copy 64-bit prefix_64
+		uip_ds6_set_addr_iid(collectorAddr, &uip_lladdr);
+		uip_ds6_addr_add(collectorAddr, 0, ADDR_AUTOCONF);
+	} else{
+		//no prefix_64, hardcode the address
+		uip_ip6addr(collectorAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
+		uip_ds6_set_addr_iid(collectorAddr, &uip_lladdr);
+		uip_ds6_addr_add(collectorAddr, 0, ADDR_AUTOCONF);
+	}
+}
+/*----------------------------------------------------------------------------------*/
+void
+set_remote_ip_addresses(uip_ipaddr_t* prefix_64, uip_ipaddr_t* sinkAddr)
+{
+	#if UIP_CONF_ROUTER
+	/* The choice of server address determines its 6LoWPAN header compression.
+	 * Obviously the choice made here must also be selected in apc-sink-node.
+	 *
+	 * For correct Wireshark decoding using a sniffer, add the /64 prefix to the
+	 * 6LowPAN protocol preferences,
+	 * e.g. set Context 0 to fd00::. At present Wireshark copies Context/128 and
+	 * then overwrites it.
+	 * (Setting Context 0 to fd00::1111:2222:3333:4444 will report a 16 bit
+	 * compressed address of fd00::1111:22ff:fe33:xxxx)
+	 * Note Wireshark's IPCMV6 checksum verification depends on the correct
+	 * uncompressed addresses.
+	 */
+	 
+	#if UIP_CONF_SINK_MODE == UIP_CONF_SINK_64_BIT
+	/* Mode 1 - 64 bits inline */
+	if (prefix_64 == NULL || uip_is_addr_unspecified(prefix_64))
+		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0xff00);
+	else
+		uip_ip6addr(sinkAddr, UIP_HTONS(prefix_64->u16[0]), UIP_HTONS(prefix_64->u16[1]), UIP_HTONS(prefix_64->u16[2]), UIP_HTONS(prefix_64->u16[3]), 0, 0, 0, 0xff00);
+	PRINTF("Sink set as (");
+	PRINT6ADDR(sinkAddr);
+	PRINTF(") 64-bit inline mode \n");
+	#elif UIP_CONF_SINK_MODE == UIP_CONF_SINK_16_BIT
+	/* Mode 2 - 16 bits inline */
+	if (prefix_64 == NULL || uip_is_addr_unspecified(prefix_64))
+		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0x00ff, 0xfe00, 0xff00);
+	else
+		uip_ip6addr(sinkAddr, UIP_HTONS(prefix_64->u16[0]), UIP_HTONS(prefix_64->u16[1]), UIP_HTONS(prefix_64->u16[2]), UIP_HTONS(prefix_64->u16[3]), 0, 0x00ff, 0xfe00, 0xff00);
+	PRINTF("Sink set as (");
+	PRINT6ADDR(sinkAddr);
+	PRINTF(") 16-bit inline mode \n");
+	#else //UIP_CONF_SINK_MODE == UIP_CONF_SINK_LL_DERIVED
+	/* Mode 3 - derived from link local (MAC) address */
+	/* hardcoded address */
+	if (prefix_64 == NULL || uip_is_addr_unspecified(prefix_64))
+		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0x0212, 0x4b00, 0x1932, 0xe37a);
+	else{ //hardcoded address
+		memcpy(sinkAddr, prefix_64, 16); //copy 64-bit prefix
+		uip_ip6addr(sinkAddr, UIP_HTONS(prefix_64->u16[0]), UIP_HTONS(prefix_64->u16[1]), UIP_HTONS(prefix_64->u16[2]), UIP_HTONS(prefix_64->u16[3]), 0x0212, 0x4b00, 0x1932, 0xe37a);
+	}
+	PRINTF("Sink set as (");
+	PRINT6ADDR(sinkAddr);
+	PRINTF(") ll-derived mode \n");
+	#endif /* UIP_CONF_SINK_MODE */
+	#endif /* UIP_CONF_ROUTER */
+}
+/*----------------------------------------------------------------------------------*/
+void
+update_ip_addresses_prefix(void* prefix_64)
+{
+	uip_ipaddr_t* pref;
+	uip_ipaddr_t collectAddr;
+	
+	if (prefix_64 == NULL)
+		return;
+	pref = (uip_ipaddr_t*)prefix_64;
+	//don't do anything if they are the same or unspecified
+	if (!uip_ipaddr_cmp(pref, &prefix) && !uip_is_addr_unspecified(pref)) 
+	{
+		PRINTF("Prefix updated from (");
+		PRINT6ADDR(&prefix);
+		PRINTF(") to (");
+		PRINT6ADDR(pref);
+		PRINTF(")\n");
+		memcpy(&prefix, pref, 16); //copy 64-bit prefix
+		/* set address of this node */
+		set_local_ip_addresses(&prefix, &collectAddr);
+		/* set server/sink address */
+		set_remote_ip_addresses(&prefix, &sink_addr);
+	}
+}
+/*----------------------------------------------------------------------------------*/
 PROCESS(apc_sensor_node_network_init_process, "APC Sensor Node (Network Initialization) Process Handler");
 PROCESS(apc_sensor_node_collect_adv_process, "APC Sensor Node (Collector Advertise) Process Handler");
 PROCESS(apc_sensor_node_collect_gather_process, "APC Sensor Node (Collector Gather) Process Handler");
@@ -442,60 +535,41 @@ PROCESS_THREAD(apc_sensor_node_collect_adv_process, ev, data)
 PROCESS_THREAD(apc_sensor_node_network_init_process, ev, data)
 {
 	//initialization
+	static struct ctimer ct_net_print;
+	static struct ctimer ct_update_addr;
+	static uip_ipaddr_t curPrefix;
 	uip_ipaddr_t collectAddr;
+	rpl_dag_t* dag;
 	PROCESS_EXITHANDLER();
 	PROCESS_BEGIN();
 	PRINTF("APC Sensor Node (Network Initialization) begins...\n");
 	seqNo = 1;
+	uip_create_unspecified(&prefix);
 	leds_off(LEDS_ALL);
 	leds_on(LEDS_GREEN);
 	
-	/*set address of this node*/
-	uip_ip6addr(&collectAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
-	uip_ds6_set_addr_iid(&collectAddr, &uip_lladdr);
-	uip_ds6_addr_add(&collectAddr, 0, ADDR_AUTOCONF);
+	/* get prefix from DAG */
+	dag = rpl_get_any_dag();
+	if (dag != NULL && !uip_is_addr_unspecified(&dag->prefix_info.prefix) ){
+		uip_ip6addr_copy(&prefix, &dag->prefix_info.prefix);
+		PRINTF("DAG Prefix: ");
+		PRINT6ADDR(&prefix);
+		PRINTF("\n");
+	}
+	else{
+		PRINTF("DAG Prefix not set.\n");
+	}
+	
+	/* set address of this node */
+	set_local_ip_addresses(&prefix, &collectAddr);
 	
 	/* set server/sink address */
-	#if UIP_CONF_ROUTER
-	/* The choice of server address determines its 6LoWPAN header compression.
-	 * Obviously the choice made here must also be selected in apc-sink-node.
-	 *
-	 * For correct Wireshark decoding using a sniffer, add the /64 prefix to the
-	 * 6LowPAN protocol preferences,
-	 * e.g. set Context 0 to fd00::. At present Wireshark copies Context/128 and
-	 * then overwrites it.
-	 * (Setting Context 0 to fd00::1111:2222:3333:4444 will report a 16 bit
-	 * compressed address of fd00::1111:22ff:fe33:xxxx)
-	 * Note Wireshark's IPCMV6 checksum verification depends on the correct
-	 * uncompressed addresses.
-	 */
-	 
-	#if UIP_CONF_ROUTER_MODE == UIP_CONF_ROUTER_64_BIT
-	/* Mode 1 - 64 bits inline */
-	uip_ip6addr(&sink_addr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 1);
-	PRINTF("Server set as (");
-	PRINT6ADDR(&sink_addr);
-	PRINTF(") 64-bit inline mode \n");
-	#elif UIP_CONF_ROUTER_MODE == UIP_CONF_ROUTER_16_BIT
-	/* Mode 2 - 16 bits inline */
-	uip_ip6addr(&sink_addr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0x00ff, 0xfe00, 1);
-	PRINTF("Server set as (");
-	PRINT6ADDR(&sink_addr);
-	PRINTF(") 16-bit inline mode \n");
-	#else
-	/* Mode 3 - derived from link local (MAC) address */
-	uip_ip6addr(&sink_addr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
-	uip_ds6_set_addr_iid(&sink_addr, &uip_lladdr);
-	PRINTF("Server set as (");
-	PRINT6ADDR(&sink_addr);
-	PRINTF(") ll-derived mode \n");
-	#endif
-	#endif
+	set_remote_ip_addresses(&prefix, &sink_addr);
 	
 	/* new connection with remote host */
 	collect_conn = udp_new(NULL, UIP_HTONS(UDP_SINK_PORT), NULL);
 	if(collect_conn == NULL) {
-		PRINTF("No UDP connection available, exiting the process!\n");
+		printf("No UDP connection available, exiting the process!\n");
 		PROCESS_EXIT();
 	}
 	udp_bind(collect_conn, UIP_HTONS(UDP_COLLECT_PORT));
@@ -507,14 +581,31 @@ PROCESS_THREAD(apc_sensor_node_network_init_process, ev, data)
 		UIP_HTONS(collect_conn->lport), UIP_HTONS(collect_conn->rport));
 	leds_off(LEDS_GREEN);
 	
-	print_local_addresses();
-	
+	print_local_addresses(NULL);
+	ctimer_set(&ct_net_print, CLOCK_SECOND * LOCAL_ADDR_PRINT_INTERVAL, print_local_addresses, NULL);
+	ctimer_set(&ct_update_addr, CLOCK_SECOND * PREFIX_UPDATE_INTERVAL, update_ip_addresses_prefix, &curPrefix);
 	while(1) {
 		PROCESS_YIELD();
 		if(ev == tcpip_event) {
 			leds_on(LEDS_LIGHT_BLUE);
 			tcpip_handler();
 			leds_off(LEDS_ALL);
+		}
+		if(ctimer_expired(&ct_net_print))
+			ctimer_reset(&ct_net_print);
+		if(ctimer_expired(&ct_update_addr)) {
+			/* get prefix from DAG */
+			dag = rpl_get_any_dag();
+			if (dag != NULL && !uip_is_addr_unspecified(&dag->prefix_info.prefix) ){
+				uip_ip6addr_copy(&curPrefix, &dag->prefix_info.prefix);
+				PRINTF("DAG Prefix: ");
+				PRINT6ADDR(&curPrefix);
+				PRINTF("\n");
+			}
+			else{
+				PRINTF("DAG missing or prefix not set.\n");
+			}
+			ctimer_reset(&ct_update_addr);
 		}
 	}
 	
