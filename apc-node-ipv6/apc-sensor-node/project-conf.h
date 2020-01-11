@@ -60,10 +60,10 @@
 /*----------------------------------------------------------------*/
 #define UDP_COLLECT_PORT                2001
 #define UDP_SINK_PORT                   2002
-#define UIP_CONF_ROUTER_64_BIT          1
-#define UIP_CONF_ROUTER_16_BIT          2
-#define UIP_CONF_ROUTER_LL_DERIVED      3
-#define UIP_CONF_ROUTER_MODE            UIP_CONF_ROUTER_64_BIT
+#define UIP_CONF_SINK_64_BIT          1
+#define UIP_CONF_SINK_16_BIT          2
+#define UIP_CONF_SINK_LL_DERIVED      3
+#define UIP_CONF_SINK_MODE            UIP_CONF_SINK_LL_DERIVED
 /*----------------------------------------------------------------*/
 /*This code was taken from rpl-collect example found in example/ipv6*/
 /*----------------------------------------------------------------*/
