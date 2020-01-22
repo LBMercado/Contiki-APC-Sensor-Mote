@@ -3,6 +3,7 @@
 #include "sys/etimer.h"
 #include "dev/zoul-sensors.h"
 #include "dev/adc-sensors.h"
+#include <stdio.h>
 #include <math.h>
 /*------------------------------------------------------------------*/
 #define MQ7_SENSOR_PIN_MASK             GPIO_PIN_MASK(MQ7_SENSOR_CTRL_PIN)
@@ -19,10 +20,11 @@
 #define OHM_SCALETO_MILLIOHM     1000
 #define KOHM_SCALETO_MILLIOHM    1000000
 //scaling factors for PPM/PPB
-#define PPM_SCALETO_PPB          1000
+#define PPM_SCALETO_PPB          0.001
+#define PPB_SCALETO_PPM          1000
 /*------------------------------------------------------------------*/
 //tolerance values
-#define RESRATIO_TOLERANCE       500
+#define RESRATIO_TOLERANCE       0.005
 /*------------------------------------------------------------------*/
 #define AQS_ADC_REF      5000
 #define AQS_ADC_MAX_VAL  32768  //15-bits ENOB ADC
@@ -65,13 +67,13 @@ allocate_calibrate_event()
 		event_allocated = 1;
 	}
 }
-/* Converts raw ADC value in millivolts to its corresponding Rs/Ro ratio value based on the sensor type.
+/* Converts raw ADC value in millivolts to its PPM value value based on the sensor type.
 @param: type = sensor identifier (MQ7_SENSOR,MQ131_SENSOR,MQ135_SENSOR)
 @param: value = ADC value to translate
-@returns: unsigned int (32 bits long) Rs/Ro in fixed point (significant to the 3rd decimal digit)
+@returns: unsigned int (32 bits long) PPM in fixed point (significant to the 3rd decimal digit)
 */
 static uint32_t
-ConvertRawValToResRatio(const uint8_t type, uint32_t value)
+ConvertRawValToPPM(const uint8_t type, uint32_t value)
 {
 	float val; //will be Rs/Ro in datasheet
 	/* rs = sensor resistance in various conditions*/
@@ -80,87 +82,171 @@ ConvertRawValToResRatio(const uint8_t type, uint32_t value)
 	
 	switch (type)
 	{
-	case MQ7_SENSOR:	
+	case MQ7_SENSOR:
 		/* Refer to datasheet
-					RS = ( (Vc – VRL) / VRL ) * RL
-					Where:
-						Vc = source voltage at time of measurement (5V or 1.4V)
-						VRL = reference resistor voltage, output of A0 Pin
-
-						*RL = reference resistor
-						
-						*assumed to be valued around ~5 - ~20 Ω
-			*/
+		*	RS = ( (Vc – VRL) / VRL ) * RL
+		*	Where:
+		*		Vc = source voltage at time of measurement (5V or 1.4V)
+		*		VRL = reference resistor voltage, output of A0 Pin
+		*		
+		*		*RL = reference resistor
+		*		
+		*		*assumed to be valued around ~5 - ~20 Ω
+		*/
 		if (aqs_info[MQ7_SENSOR].ro == 0) {
-			PRINTF("ERROR: @AQS:ConvertRawValToResRatio(MQ7) - Ro is not calibrated.\n");
+			PRINTF("ERROR: @AQS:ConvertRawValToPPM(MQ7) - Ro is not calibrated.\n");
 			return 0;
 		}
 		rs = ( ( 5000 - val ) / (float)val ) * (MQ7_RL_KOHM * KOHM_SCALETO_MILLIOHM);
-		val = (float)rs / aqs_info[MQ7_SENSOR].ro * 1000; //preserve decimal part by 3 digits
+		val = (float)rs / (float)aqs_info[MQ7_SENSOR].ro;
 		
-		//make sure valid is within range of sensor specs else warn user
-		if (val + RESRATIO_TOLERANCE <= MQ7_RESRATIO_MIN && 
-			val - RESRATIO_TOLERANCE >= MQ7_RESRATIO_MAX) {
-			PRINTF("WARNING: @AQS:ConvertRawValToResRatio(MQ7) - \'val\' is out of bounds. ");
+		//make sure valid is within range of sensor specs else set to min/max and warn user
+		if (val + RESRATIO_TOLERANCE <= MQ7_RESRATIO_MIN) {
+			PRINTF("WARNING: @AQS:ConvertRawValToPPM(MQ7) - \'val\' is out of bounds. Minimum value set.\n");
 			PRINTF("Computed value: %u.%03u\n", (uint16_t)val, (uint16_t)( (val - (uint16_t)val) * 1000) );
+			val = MQ7_RESRATIO_MIN;
+		} else if (val - RESRATIO_TOLERANCE >= MQ7_RESRATIO_MAX){
+			PRINTF("WARNING: @AQS:ConvertRawValToPPM(MQ7) - \'val\' is out of bounds. Maximum value set.\n");
+			PRINTF("Computed value: %u.%03u\n", (uint16_t)val, (uint16_t)( (val - (uint16_t)val) * 1000) );
+			val = MQ7_RESRATIO_MAX;
 		}
 		
-		return (uint32_t)val;
+		//convert Rs/Ro ratio to PPM
+		//compare from the top since the boundaries are in descending order
+		//check if it falls within third boundary
+		if (val - RESRATIO_TOLERANCE <= MQ7_RESRATIO_BOUNDARY_3){
+			val = ( MQ7_PPM_BOUNDARY_3 ) *
+			powf( ( val / MQ7_RESRATIO_BOUNDARY_2 ) ,
+			logf( MQ7_PPM_BOUNDARY_4 / MQ7_PPM_BOUNDARY_3 ) / logf( MQ7_RESRATIO_BOUNDARY_4 / MQ7_RESRATIO_BOUNDARY_3 ) );
+		}
+		//check if it falls within second boundary
+		else if (val - RESRATIO_TOLERANCE <= MQ7_RESRATIO_BOUNDARY_2){
+			val = ( MQ7_PPM_BOUNDARY_2 ) *
+			powf( ( val / MQ7_RESRATIO_BOUNDARY_1 ) ,
+			logf( MQ7_PPM_BOUNDARY_3 / MQ7_PPM_BOUNDARY_2 ) / logf( MQ7_RESRATIO_BOUNDARY_3 / MQ7_RESRATIO_BOUNDARY_2 ) );
+		}
+		//check if it falls within first boundary
+		else if (val - RESRATIO_TOLERANCE <= MQ7_RESRATIO_BOUNDARY_1){
+			val = ( MQ7_PPM_BOUNDARY_1 ) *
+			powf( ( val / MQ7_RESRATIO_BOUNDARY_1 ) ,
+			logf( MQ7_PPM_BOUNDARY_2 / MQ7_PPM_BOUNDARY_1 ) / logf( MQ7_RESRATIO_BOUNDARY_2 / MQ7_RESRATIO_BOUNDARY_1 ) );
+		}
+		else {
+			printf("Error for AQS: ConvertRawValToPPM(MQ7) function - unhandled value. \n");
+			val = 0;
+		}
+		return (uint32_t)(val * 1000); //preserve decimal part by 3 digits
 		break;
 	case MQ131_SENSOR:
 		/* Refer to datasheet
-					RS = ( Vc / VRL - 1 ) × RL
-
-					Where:
-
-						Vc = source voltage at time of measurement (5V)
-						VRL = reference resistor voltage, output of A0 Pin
-						*RL = reference resistor
-						
-						*assumed to be valued around ~5 - ~20 Ω
-				*/
+		*	RS = ( Vc / VRL - 1 ) × RL
+		*			Where:
+		*				Vc = source voltage at time of measurement (5V)
+		*				VRL = reference resistor voltage, output of A0 Pin
+		*				*RL = reference resistor
+		*				
+		*				*assumed to be valued around ~5 - ~20 Ω
+		*/
 		if (aqs_info[MQ131_SENSOR].ro == 0) {
-			PRINTF("ERROR: @AQS:ConvertRawValToResRatio(MQ131) - Ro is not calibrated.\n");
+			PRINTF("ERROR: @AQS:ConvertRawValToPPM(MQ131) - Ro is not calibrated.\n");
 			return 0;
 		}
 		rs = ( ( 5000 / (float)val ) - 1 ) * ( MQ131_RL_KOHM * KOHM_SCALETO_MILLIOHM );
-		val = (float)rs / aqs_info[MQ131_SENSOR].ro * 1000; //preserve decimal part by 3 digits
-		
-		//make sure valid is within range of sensor specs else warn user
-		if (val + RESRATIO_TOLERANCE <= MQ131_RESRATIO_MIN * 1000 ||
-			val - RESRATIO_TOLERANCE >= MQ131_RESRATIO_MAX * 1000) {
-			PRINTF("WARNING: @AQS:ConvertRawValToResRatio(MQ131) - \'val\' is out of bounds. ");
+		val = (float)rs / (float)aqs_info[MQ131_SENSOR].ro;
+		//make sure valid is within range of sensor specs else set to min/max and warn user
+		if (val - RESRATIO_TOLERANCE <= MQ7_RESRATIO_MIN) {
+			PRINTF("WARNING: @AQS:ConvertRawValToPPM(MQ131) - \'val\' is out of bounds. Minimum value set.\n");
 			PRINTF("Computed value: %u.%03u\n", (uint16_t)val, (uint16_t)( (val - (uint16_t)val) * 1000) );
+			val = MQ131_RESRATIO_MIN;
+		} else if (val - RESRATIO_TOLERANCE >= MQ7_RESRATIO_MAX){
+			PRINTF("WARNING: @AQS:ConvertRawValToPPM(MQ131) - \'val\' is out of bounds. Maximum value set.\n");
+			PRINTF("Computed value: %u.%03u\n", (uint16_t)val, (uint16_t)( (val - (uint16_t)val) * 1000) );
+			val = MQ131_RESRATIO_MAX;
 		}
-		return (uint32_t)val;
+		
+		//convert Rs/Ro ratio to PPM
+		//compare from the top since the boundaries are in descending order
+		//check if it falls within fourth boundary
+		if (val - RESRATIO_TOLERANCE <= MQ131_RESRATIO_BOUNDARY_4){
+			val = ( MQ131_PPM_BOUNDARY_4 ) *
+			powf( ( val / MQ131_RESRATIO_BOUNDARY_4 ) ,
+			logf( MQ131_PPM_BOUNDARY_5 / MQ131_PPM_BOUNDARY_4 ) / logf( MQ131_RESRATIO_BOUNDARY_5 / MQ131_RESRATIO_BOUNDARY_4 ) );
+		}
+		//check if it falls within third boundary
+		else if (val - RESRATIO_TOLERANCE <= MQ131_RESRATIO_BOUNDARY_3){
+			val = ( MQ131_PPM_BOUNDARY_3 ) *
+			powf( ( val / MQ131_RESRATIO_BOUNDARY_3 ) ,
+			logf( MQ131_PPM_BOUNDARY_4 / MQ131_PPM_BOUNDARY_3 ) / logf( MQ131_RESRATIO_BOUNDARY_4 / MQ131_RESRATIO_BOUNDARY_3 ) );
+		}
+		//check if it falls within second boundary
+		else if (val - RESRATIO_TOLERANCE <= MQ131_RESRATIO_BOUNDARY_2){
+			val = ( MQ131_PPM_BOUNDARY_2 ) *
+			powf( ( val / MQ131_RESRATIO_BOUNDARY_2 ) ,
+			logf( MQ131_PPM_BOUNDARY_3 / MQ131_PPM_BOUNDARY_2 ) / logf( MQ131_RESRATIO_BOUNDARY_3 / MQ131_RESRATIO_BOUNDARY_2 ) );
+		}
+		//check if it falls within first boundary
+		else if (val - RESRATIO_TOLERANCE <= MQ131_RESRATIO_BOUNDARY_1){
+			val = ( MQ131_PPM_BOUNDARY_1 ) *
+			powf( ( val / MQ131_RESRATIO_BOUNDARY_1 ) ,
+			logf( MQ131_PPM_BOUNDARY_2 / MQ131_PPM_BOUNDARY_1 ) / logf( MQ131_RESRATIO_BOUNDARY_2 / MQ131_RESRATIO_BOUNDARY_1 ) );
+		}
+		else {
+			printf("Error for AQS: ConvertRawValToPPM(MQ131) function - unhandled value. \n");
+			val = 0;
+		}
+
+		return (uint32_t)(val * 1000); //preserve decimal part by 3 digits
 		break;
 	case MQ135_SENSOR:
 		/* Refer to datasheet
-					RS = ( Vc / VRL - 1 ) × RL
-					Where:
-						Vc = source voltage at time of measurement (5V)
-						VRL = reference resistor voltage, output of A0 Pin
-						*RL = reference resistor
-						
-						*assumed to be valued around ~5 - ~20 Ω
-				*/
+		*	RS = ( Vc / VRL - 1 ) × RL
+		*		Where:
+		*			Vc = source voltage at time of measurement (5V)
+		*			VRL = reference resistor voltage, output of A0 Pin
+		*			*RL = reference resistor
+		*			
+		*			*assumed to be valued around ~5 - ~20 Ω
+		*/
 		if (aqs_info[MQ135_SENSOR].ro == 0) {
-			PRINTF("ERROR: @AQS:ConvertRawValToResRatio(MQ135) - Ro is not calibrated.\n");
+			PRINTF("ERROR: @AQS:ConvertRawValToPPM(MQ135) - Ro is not calibrated.\n");
 			return 0;
 		}
 		rs = ( ( 5000 / (float)val ) - 1 ) * ( MQ135_RL_KOHM * KOHM_SCALETO_MILLIOHM );
-		val = (float)rs / aqs_info[MQ135_SENSOR].ro * 1000; //preserve decimal part by 3 digits
-		
-		//make sure valid is within range of sensor specs else warn user
-		if (val + RESRATIO_TOLERANCE <= MQ135_RESRATIO_MIN * 1000 || 
-			val - RESRATIO_TOLERANCE >= MQ135_RESRATIO_MAX * 1000) {
-			PRINTF("WARNING: @AQS:ConvertRawValToResRatio(MQ135) - \'val\' is out of bounds. ");
+		val = (float)rs / (float)aqs_info[MQ135_SENSOR].ro;
+		//make sure valid is within range of sensor specs else set to min/max and warn user
+		if (val - RESRATIO_TOLERANCE <= MQ135_RESRATIO_MIN) {
+			PRINTF("WARNING: @AQS:ConvertRawValToPPM(MQ135) - \'val\' is out of bounds. Minimum value set.\n");
 			PRINTF("Computed value: %u.%03u\n", (uint16_t)val, (uint16_t)( (val - (uint16_t)val) * 1000) );
+			val = MQ135_RESRATIO_MIN;
+		} else if (val - RESRATIO_TOLERANCE >= MQ135_RESRATIO_MAX){
+			PRINTF("WARNING: @AQS:ConvertRawValToPPM(MQ135) - \'val\' is out of bounds. Maximum value set.\n");
+			PRINTF("Computed value: %u.%03u\n", (uint16_t)val, (uint16_t)( (val - (uint16_t)val) * 1000) );
+			val = MQ135_RESRATIO_MAX;
 		}
-		return (uint32_t)val;
+		
+		//convert Rs/Ro ratio to PPM
+		//compare from the top since the boundaries are in descending order
+		//check if it falls within second boundary
+		if (val - RESRATIO_TOLERANCE <= MQ135_RESRATIO_BOUNDARY_2){
+			val = ( MQ135_PPM_BOUNDARY_2 ) *
+			powf( ( val / MQ135_RESRATIO_BOUNDARY_2 ) ,
+			logf( MQ135_PPM_BOUNDARY_3 / MQ135_PPM_BOUNDARY_2 ) / logf( MQ135_RESRATIO_BOUNDARY_3 / MQ135_RESRATIO_BOUNDARY_2 ) );
+		}
+		//check if it falls within first boundary
+		else if (val - RESRATIO_TOLERANCE <= MQ135_RESRATIO_BOUNDARY_1){
+			val = ( MQ135_PPM_BOUNDARY_1 ) *
+			powf( ( val / MQ135_RESRATIO_BOUNDARY_1 ) ,
+			logf( MQ135_PPM_BOUNDARY_2 / MQ135_PPM_BOUNDARY_1 ) / logf( MQ135_RESRATIO_BOUNDARY_2 / MQ135_RESRATIO_BOUNDARY_1 ) );
+		}
+		else {
+			PRINTF("Error for AQS: ConvertRawValToPPM(MQ135) function - unhandled value.\n");
+			val = 0;
+		}
+
+		return (uint32_t)(val * 1000); //preserve decimal part by 3 digits
 		break;
 	default:
-		PRINTF("Error for AQS: ConvertRawValToResRatio function parameter \'type\' is not valid.\n");
+		PRINTF("Error for AQS: ConvertRawValToPPM function parameter \'type\' is not valid.\n");
 		return 0;
 	}
 }
@@ -215,7 +301,7 @@ ConvertRawValToSensorRes(const uint8_t type, uint32_t value)
 		return value;
 		break;
 	default:
-		PRINTF("Error for AQS: ConvertRawValToResRatio function parameter \'type\' is not valid.\n");
+		PRINTF("Error for AQS: ConvertRawValToPPM function parameter \'type\' is not valid.\n");
 		return 0;
 	}
 }
@@ -311,8 +397,10 @@ measure_aqs(const void* data_ptr)
 
 	PRINTF("measure_aqs: sensor(0x%02x) mv ADC value = %lu\n", aqs_info_data->sensorType, val);
 	
-	aqs_info[aqs_info_data->sensorType].value = ConvertRawValToResRatio(aqs_info_data->sensorType, val);
-	PRINTF("measure_aqs: sensor(0x%02x) ResRatio value = %u\n", aqs_info_data->sensorType, aqs_info[aqs_info_data->sensorType].value);
+	aqs_info[aqs_info_data->sensorType].value = ConvertRawValToPPM(aqs_info_data->sensorType, val);
+	PRINTF("measure_aqs: sensor(0x%02x) ppm value = %u.%03u\n", aqs_info_data->sensorType, 
+		(uint16_t)aqs_info[aqs_info_data->sensorType].value / 1000, 
+		(uint16_t)( ((float)aqs_info[aqs_info_data->sensorType].value / 1000) - ((uint16_t)aqs_info[aqs_info_data->sensorType].value / 1000) ) * 1000);
 	aqs_info[aqs_info_data->sensorType].state = AQS_ENABLED;
 	PRINTF("measure_aqs: sensor(0x%02x) set to ENABLED.\n", aqs_info_data->sensorType);
 }

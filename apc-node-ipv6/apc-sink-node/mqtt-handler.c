@@ -139,7 +139,7 @@ typedef struct mqtt_client_config {
 * Make sure they are large enough to hold the entire respective string
 *
 * d:quickstart:status:EUI64 is 32 bytes long
-* iot-2/evt/status/fmt/json is 25 bytes
+* apc-iot/evt/status/fmt/json is 25 bytes
 * We also need space for the null termination
 */
 #define BUFFER_SIZE 64
@@ -293,7 +293,7 @@ mqtt_event(struct mqtt_connection *m, mqtt_event_t event, void *data)
 static int
 construct_pub_topic(void)
 {
-	int len = snprintf(pub_topic, BUFFER_SIZE, "iot-2/evt/%s/fmt/json",
+	int len = snprintf(pub_topic, BUFFER_SIZE, "apc-iot/evt/%s/fmt/json",
 	conf.event_type_id);
 	/* len < 0: Error. Len >= BUFFER_SIZE: Buffer too small */
 	if(len < 0 || len >= BUFFER_SIZE) {
@@ -306,7 +306,7 @@ construct_pub_topic(void)
 static int
 construct_sub_topic(void)
 {
-	int len = snprintf(sub_topic, BUFFER_SIZE, "iot-2/cmd/%s/fmt/json",
+	int len = snprintf(sub_topic, BUFFER_SIZE, "apc-iot/cmd/%s/fmt/json",
 	conf.cmd_type);
 	/* len < 0: Error. Len >= BUFFER_SIZE: Buffer too small */
 	if(len < 0 || len >= BUFFER_SIZE) {
@@ -561,7 +561,7 @@ pub_sensor_data
 			//CO2
 			remaining -= len;
 			buf_ptr += len;
-			len = snprintf(buf_ptr, remaining, ",\"CO2. (ratio)\":%s",
+			len = snprintf(buf_ptr, remaining, ",\"CO2. (ppm)\":%s",
 			strcmp(n->CO2,"") ? n->CO2 : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
@@ -570,7 +570,7 @@ pub_sensor_data
 			//CO
 			remaining -= len;
 			buf_ptr += len;
-			len = snprintf(buf_ptr, remaining, ",\"CO. (ratio)\":%s",
+			len = snprintf(buf_ptr, remaining, ",\"CO. (ppm)\":%s",
 			strcmp(n->CO,"") ? n->CO : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
@@ -579,7 +579,7 @@ pub_sensor_data
 			//O3
 			remaining -= len;
 			buf_ptr += len;
-			len = snprintf(buf_ptr, remaining, ",\"O3 (ratio)\":%s",
+			len = snprintf(buf_ptr, remaining, ",\"O3 (ppm)\":%s",
 			strcmp(n->O3,"") ? n->O3 : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
