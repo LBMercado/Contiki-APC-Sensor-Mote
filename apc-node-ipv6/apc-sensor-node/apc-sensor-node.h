@@ -23,10 +23,10 @@ SENSOR_TYPES[SENSOR_COUNT] =
 {
 	TEMPERATURE_T, //unit in Deg. Celsius
 	HUMIDITY_T, //unit in %RH
-	PM25_T, //unit in ppm, compute to microgram per m3 at processing server
-	CO_T, //unitless (ratio in milli scale), compute to ppm at processing server
-	CO2_T, //unitless (ratio in milli scale), compute to ppm at processing server
-	O3_T, //unitless (ratio in milli scale), compute to ppm at processing server
+	PM25_T, //unit in microgram per m3
+	CO_T, //unit in ppm
+	CO2_T, //unit in ppm
+	O3_T, //unit in ppm
 	WIND_SPEED_T, //unit in m/s
 	WIND_DRCTN_T //may be N, S, E, W and their combinations
 };
