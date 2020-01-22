@@ -95,10 +95,10 @@ summarize_readings_callback(void* arg)
 		PRINTF("----Readings----\n");
 		PRINTF("Temperature: %s deg. Celsius\n", n->temperature);
 		PRINTF("Humidity: %s %%RH\n", n->humidity);
-		PRINTF("PM25: %s ppm\n", n->PM25);
-		PRINTF("CO: %s Rs/Ro\n", n->CO);
-		PRINTF("CO2: %s Rs/Ro\n", n->CO2);
-		PRINTF("O3: %s Rs/Ro\n", n->O3);
+		PRINTF("PM25: %s ug/m3\n", n->PM25);
+		PRINTF("CO: %s PPM\n", n->CO);
+		PRINTF("CO2: %s PPM\n", n->CO2);
+		PRINTF("O3: %s PPM\n", n->O3);
 		PRINTF("Wind Speed: %s\n", n->windSpeed);
 		PRINTF("Wind Direction: %s\n", n->windDir);
 	}

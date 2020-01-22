@@ -28,11 +28,11 @@ enum
 	//sensor data identity headers (also a sensor type)
 	TEMPERATURE_T, //unit in Deg. Celsius
 	HUMIDITY_T, //unit in %RH
-	PM25_T, //unit in ppm, compute to microgram per m3 at processing server
-	CO_T, //unitless (ratio in milli scale), compute to ppm at processing server
+	PM25_T, //unit in ug/m3
+	CO_T, //unit in ppm
 	/*NO2_T, //unit in ppm, unused */
-	CO2_T, //unitless (ratio in milli scale), compute to ppm at processing server
-	O3_T, //unitless (ratio in milli scale), compute to ppm at processing server
+	CO2_T, //unit in ppm
+	O3_T, //unit in ppm
 	WIND_SPEED_T, //unit in m/s
 	WIND_DRCTN_T //may be N, S, E, W and their combinations
 };
@@ -61,10 +61,10 @@ typedef struct sensor_node {
 	/* Sensor readings data for a node */
 	char temperature[8]; //unit in Deg. Celsius
 	char humidity[8];    //unit in %RH (0%-100%)
-	char PM25[8];        //unit in ppm, compute to microgram per m3 at processing server
-	char CO[8];          //unitless (ratio in milli scale), compute to ppm at processing server
-	char CO2[8];         //unitless (ratio in milli scale), compute to ppm at processing server
-	char O3[8];          //unitless (ratio in milli scale), compute to ppm at processing server
+	char PM25[8];        //unit in ug/m3
+	char CO[8];          //unit in ppm
+	char CO2[8];         //unit in ppm
+	char O3[8];          //unit in ppm
 	char windSpeed[8];   //unit in m/s
 	char windDir[2];     //may be N, S, E, W and their combinations (NW, NE, SW, SE)
 } sensor_node_t;

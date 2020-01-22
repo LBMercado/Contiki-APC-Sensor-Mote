@@ -14,7 +14,6 @@ Refer to https://github.com/ultimaterobotics/mq7-co-monitor/blob/master/co_monit
 #include "lib/sensors.h"
 #include "dev/adc-zoul.h"
 #include "dev/gpio.h"
-#include <stdio.h>
 /*------------------------------------------------------------------*/
 #ifndef AQS_H_ 
 #define AQS_H_
