@@ -23,8 +23,8 @@
 #define DHT22_CONF_PORT                 GPIO_D_NUM
 
 /* GP2Y1014AUOF (PM2.5/Dust)
- *  -> A5 (ADC Input) (ADC1)
- *  -> D2 (Digital Output, Enable Sensor LED to Measure)
+ *  -> A5 (ADC Input) (ADC1) (Black cable)
+ *  -> D2 (Digital Output, Enable Sensor LED to Measure) (White cable)
  */
 
 #define PM25_SENSOR_LED_CONF_CTRL_PIN       2
