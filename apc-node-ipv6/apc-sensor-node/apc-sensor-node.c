@@ -167,7 +167,7 @@ read_sensor
 			);
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: CO_T \n");
-			PRINTF("Rs/Ro: %d.%03d\n",
+			PRINTF("PPM: %d.%03d\n",
 				value1 / 1000,
 				value1 % 1000);
 			PRINTF("-----------------\n");
@@ -198,7 +198,7 @@ read_sensor
 			);
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: CO2_T \n");
-			PRINTF("Rs/Ro: %d.%03d\n", 
+			PRINTF("PPM: %d.%03d\n", 
 				value1 / 1000,
 				value1 % 1000);
 			PRINTF("-----------------\n");
@@ -229,7 +229,7 @@ read_sensor
 			);
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: O3_T \n");
-			PRINTF("Rs/Ro: %d.%03d\n", 
+			PRINTF("PPM: %d.%03d\n", 
 				value1 / 1000,
 				value1 % 1000);
 			PRINTF("-----------------\n");
