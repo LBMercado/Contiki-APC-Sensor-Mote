@@ -465,7 +465,7 @@ set_remote_ip_addresses(uip_ipaddr_t* prefix_64, uip_ipaddr_t* sinkAddr)
 	/* Mode 3 - derived from link local (MAC) address */
 	/* hardcoded address */
 	if (prefix_64 == NULL || uip_is_addr_unspecified(prefix_64))
-		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0x0212, 0x4b00, 0x1932, 0xe37a);
+		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0x0212, 0x4b00, 0x194a, 0x51e1);
 	else{ //hardcoded address
 		memcpy(sinkAddr, prefix_64, 16); //copy 64-bit prefix
 		uip_ip6addr(sinkAddr, UIP_HTONS(prefix_64->u16[0]), UIP_HTONS(prefix_64->u16[1]), UIP_HTONS(prefix_64->u16[2]), UIP_HTONS(prefix_64->u16[3]), 0x0212, 0x4b00, 0x1932, 0xe37a);
