@@ -534,7 +534,7 @@ pub_sensor_data
 			//Temperature
 			remaining -= len;
 			buf_ptr += len;
-			len = snprintf(buf_ptr, remaining, ",\"Temp. (°C)\":%s",
+			len = snprintf(buf_ptr, remaining, ",\"Temperature (°C)\":%s",
 			strcmp(n->temperature,"") ? n->temperature : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
@@ -543,7 +543,7 @@ pub_sensor_data
 			//Humidity
 			remaining -= len;
 			buf_ptr += len;
-			len = snprintf(buf_ptr, remaining, ",\"Humidity. (°C)\":%s",
+			len = snprintf(buf_ptr, remaining, ",\"Humidity (°C)\":%s",
 			strcmp(n->humidity,"") ? n->humidity : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
@@ -552,7 +552,7 @@ pub_sensor_data
 			//PM25
 			remaining -= len;
 			buf_ptr += len;
-			len = snprintf(buf_ptr, remaining, ",\"PM25. (ug/m3)\":%s",
+			len = snprintf(buf_ptr, remaining, ",\"PM25 (ug/m3)\":%s",
 			strcmp(n->PM25,"") ? n->PM25 : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
@@ -561,7 +561,7 @@ pub_sensor_data
 			//CO2
 			remaining -= len;
 			buf_ptr += len;
-			len = snprintf(buf_ptr, remaining, ",\"CO2. (ppm)\":%s",
+			len = snprintf(buf_ptr, remaining, ",\"CO2 (ppm)\":%s",
 			strcmp(n->CO2,"") ? n->CO2 : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
@@ -570,7 +570,7 @@ pub_sensor_data
 			//CO
 			remaining -= len;
 			buf_ptr += len;
-			len = snprintf(buf_ptr, remaining, ",\"CO. (ppm)\":%s",
+			len = snprintf(buf_ptr, remaining, ",\"CO (ppm)\":%s",
 			strcmp(n->CO,"") ? n->CO : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
