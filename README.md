@@ -43,6 +43,8 @@ The following codes written are used to program the motes to read from the senso
 
 Procedure for compiling and running border router to follow.
 
+You can make use of the mqtt subscriber to make the published data persistent. The subscriber will store the published data locally using MongoDB.
+
 Make sure to update the git repo for contiki to avoid any other issues
 (cd into contiki and pull the latest release using the command "git pull")
 
