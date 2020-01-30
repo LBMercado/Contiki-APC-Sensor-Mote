@@ -76,17 +76,18 @@ value(int type)
 	GPIO_SET_PIN(PM25_SENSOR_LED_PORT_BASE, PM25_SENSOR_LED_PIN_MASK);
 	clock_delay_usec(PM25_SENSOR_PULSE_DELAY);
 	val = (uint32_t)adc_zoul.value(PM25_SENSOR_OUT_PIN_MASK);
-
+        
 	if(val == ZOUL_SENSORS_ERROR) {
 		printf("PM25-Sensor: failed to read from ADC.\n");
 		return PM25_ERROR;
 	}
-	
+	PRINTF("PM25-Sensor: raw adc value: %lu\n", val);
+
 	if ( val > PM25_ADC_MAX_VAL)
 		val = PM25_ADC_MAX_VAL;
 	val *= PM25_ADC_REF;
 	val /= PM25_ADC_MAX_VAL;
-
+	PRINTF("PM25-Sensor: mv adc value: %lu\n", val);
 	//watch out for out of spec values
 	if      (val < PM25_MIN_OUTPUT_MILLIVOLT){
 		PRINTF("WARNING @PM25_SENSOR: output value is not within specifications of sensor. ");
@@ -101,7 +102,7 @@ value(int type)
 
 	/* conversion mv->ug/m3, output voltage has a linear relationship at specified values with dust density */
 	val = PM25_MIN_OUTPUT_MICRODUST + ( (val - PM25_MIN_OUTPUT_MILLIVOLT) * (PM25_MAX_OUTPUT_MICRODUST - PM25_MIN_OUTPUT_MICRODUST) )/ ( PM25_MAX_OUTPUT_MILLIVOLT - PM25_MIN_OUTPUT_MILLIVOLT );
-
+	PRINTF("PM25-Sensor: computed dust density: %lu\n", val);
 	/* clear pulse wave pin */
 	GPIO_CLR_PIN(PM25_SENSOR_LED_PORT_BASE, PM25_SENSOR_LED_PIN_MASK);
 
