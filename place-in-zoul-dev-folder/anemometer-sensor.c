@@ -35,7 +35,7 @@ static anem_info_t anem_info[2];
 @returns: unsigned int (16 bits long) equivalent wind sensor value
 */
 static uint16_t
-ConvertValToWindOutput(uint8_t type, uint16_t val){
+ConvertValToWindOutput(uint8_t type, uint32_t val){
 	switch(type){
 		case WIND_SPEED_SENSOR:	
 			//Convert voltage value to wind speed using range of max and min voltages and wind speed for the
