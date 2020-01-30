@@ -1,0 +1,57 @@
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"/><title>Unknown </title></head><body>
+<h1 id="contiki-apc-sensor-mote">Contiki-APC-Sensor-Mote</h1>
+<p>This makes use of the <strong><em>Contiki OS and Zoul Firefly Platform</em></strong>.
+The codes are designed to work in the Zoul Firefly Platform, I cannot guarantee that they will still work on a different platform.</p>
+<p>The following codes written are used to program the motes to read from the sensors, and communicate them from the collector motes to the sink mote.</p>
+<h2 id="two-implementations-are-available-here">Two implementations are available here:</h2>
+<ul>
+<li>the <strong>rime</strong> implementation is a non-ip based network used for testing purposes with no connectivity outside its local network.</li>
+<li>the <strong>ipv6</strong> implementation provides connectivity outside its local network through a <em>border router</em> ~~which is also the sink mote.~~<ul>
+<li>the border router is typically connected through a USB interface on a computer or the Raspberry Pi in this case.</li>
+</ul>
+</li>
+</ul>
+<h2 id="there-are-three-types-of-motes-in-this-mote-network">There are three types of motes in this mote network:</h2>
+<ol>
+<li>APC-Sensor-Node -&gt; Collector Mote</li>
+<li>APC-Sink-Node -&gt; Sink Mote ~~&amp; Border Router(Not Implemented Yet)~~</li>
+<li>Border Router</li>
+</ol>
+<h3 id="sensors-used">Sensors Used</h3>
+<ul>
+<li>DHT22 (Temperature and Humidity)</li>
+<li>GP2Y1014AU0F (PM2.5)</li>
+<li>MQ7 (Carbon Monoxide)</li>
+<li>MQ131 (Ozone)</li>
+<li>MQ135 (~~Nitrogen Oxides~~/Carbon Dioxide)</li>
+</ul>
+<p><em>quantifiable phenomenon are measured</em></p>
+<p><strong>This implementation is valid for only one mote network, if using multiple mote networks, a server is needed and is not covered here.</strong></p>
+<h2 id="procedure-to-make-this-work">Procedure to make this work</h2>
+<ul>
+<li>Move one of the 'apc-node' folders into the examples folder in Contiki, and follow instructions to compile and run.<ul>
+<li>make necessary changes to the project.conf file to fit your device's needs</li>
+</ul>
+</li>
+<li>Move the files within 'place-in-dev-folder' inside the 'platform/zoul/dev' folder in Contiki</li>
+<li>Replace also the dht22.c file there with the one here since there is a bug that prevents the original one from working properly, this file fixes that bug. [1]</li>
+</ul>
+<h2 id="compiling-and-uploading-code-using-contiki-and-zoul-firefly-general-procedure">Compiling and Uploading Code Using Contiki and Zoul Firefly (general procedure)</h2>
+<pre><code>1. Create the C file with the program logic. (Measure sensor, broadcast etc.)
+2. Create the make file for compilation.
+3. Enter the command: "make TARGET=zoul BOARD=firefly savetarget"
+4. Enter the command: "make motelist"
+    a. This will show the device port which will be required for uploading the code
+5. Enter the command: "make &lt;c-file-name&gt;.upload PORT=&lt;device-port-number&gt;"
+6. To monitor the output of the device in terminal, enter the command: "make login PORT=&lt;device-port-number&gt;"
+</code></pre>
+<p>Procedure for compiling and running border router to follow.</p>
+<p>Make sure to update the git repo for contiki to avoid any other issues
+(cd into contiki and pull the latest release using the command "git pull")</p>
+<p>[1] For DHT22, bug in code prevents it from working properly make modifications as follows:
+The contiki-ng code for dht22 was working and when i compared their c source codes, I found 2 changes that when done in contiki code, it started giving nice output.
+    1. initialing last_state = 0xff in dht22.c
+    2. commenting out the assignment statement last_state = GPIO_READ_PIN(DHT22_PORT_BASE, DHT22_PIN_MASK); in dht22_read() function of dht22.c</p>
+<p>From <a href="https://github.com/contiki-os/contiki/issues/2495">https://github.com/contiki-os/contiki/issues/2495</a> 
+reference for correct code</p>
+</body></html>

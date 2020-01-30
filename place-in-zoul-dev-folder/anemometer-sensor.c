@@ -171,7 +171,7 @@ configure(int type, int value){
 /*--------------------------------------------------------------------------------*/
 static int
 value(int type){
-	
+	uint32_t val;
 	switch(type){
 		case WIND_SPEED_SENSOR:
 			//make sure sensor is enabled
@@ -181,22 +181,22 @@ value(int type){
 			}
 
 			/*512 bit resolution, output is in mV already*/
-			anem_info[WIND_SPEED_SENSOR].value = adc_zoul.value(WIND_SPEED_SENSOR_PIN_MASK);
-			if (anem_info[WIND_SPEED_SENSOR].value == ZOUL_SENSORS_ERROR){
+			val = adc_zoul.value(WIND_SPEED_SENSOR_PIN_MASK);
+			if (val == ZOUL_SENSORS_ERROR){
 				PRINTF("Error@WIND_SENSOR(SPEED): value function - failed to get value from ADC sensor\n");
 				anem_info[WIND_SPEED_SENSOR].value = 0;
 				return WIND_SENSOR_ERROR;
 			}
-			PRINTF("Wind Sensor (SPEED): value function - raw ADC value = %u\n", anem_info[WIND_SPEED_SENSOR].value);
+			PRINTF("Wind Sensor (SPEED): value function - raw ADC value = %u\n", val);
 
-			if (anem_info[WIND_SPEED_SENSOR].value > WIND_SENSOR_ADC_MAX_VAL)
-				anem_info[WIND_SPEED_SENSOR].value = WIND_SENSOR_ADC_MAX_VAL;
+			if (val > WIND_SENSOR_ADC_MAX_VAL)
+				val = WIND_SENSOR_ADC_MAX_VAL;
 
-			anem_info[WIND_SPEED_SENSOR].value *= WIND_SENSOR_ADC_REF;
-			anem_info[WIND_SPEED_SENSOR].value /= WIND_SENSOR_ADC_MAX_VAL;
-			PRINTF("Wind Sensor (SPEED): value function - mv ADC value = %u\n", anem_info[WIND_SPEED_SENSOR].value);
+			val *= WIND_SENSOR_ADC_REF;
+			val /= WIND_SENSOR_ADC_MAX_VAL;
+			PRINTF("Wind Sensor (SPEED): value function - mv ADC value = %u\n", val);
 			
-			anem_info[WIND_SPEED_SENSOR].value = ConvertValToWindOutput(type, anem_info[WIND_SPEED_SENSOR].value);
+			anem_info[WIND_SPEED_SENSOR].value = ConvertValToWindOutput(type, val);
 
 			if (anem_info[WIND_SPEED_SENSOR].value > WIND_SPEED_TOLERANCE && anem_info[WIND_SPEED_SENSOR].value - WIND_SPEED_TOLERANCE > WIND_MAX_SPEED ) {
 				PRINTF("WARNING@WIND_SENSOR(SPEED): value function - Wind Speed exceeded maximum spec. value.\n");
@@ -211,21 +211,21 @@ value(int type){
 				return WIND_SENSOR_ERROR;
 			}
 			/*512 bit resolution, output is in mV already*/
-			anem_info[WIND_DIR_SENSOR].value = adc_zoul.value(WIND_DIR_SENSOR_PIN_MASK);
-			if (anem_info[WIND_DIR_SENSOR].value == ZOUL_SENSORS_ERROR){
+			val = adc_zoul.value(WIND_DIR_SENSOR_PIN_MASK);
+			if (val == ZOUL_SENSORS_ERROR){
 				PRINTF("Error for Wind Sensor (DRCTN): value function - failed to get value from ADC sensor\n");
 				anem_info[WIND_DIR_SENSOR].value = 0;
 				return WIND_SENSOR_ERROR;
 			}
-			PRINTF("Wind Sensor (DRCTN): value function - raw ADC value = %u\n", anem_info[WIND_SPEED_SENSOR].value);
+			PRINTF("Wind Sensor (DRCTN): value function - raw ADC value = %u\n", val);
 
-			if (anem_info[WIND_DIR_SENSOR].value > WIND_SENSOR_ADC_MAX_VAL)
-				anem_info[WIND_DIR_SENSOR].value = WIND_SENSOR_ADC_MAX_VAL;
-			anem_info[WIND_DIR_SENSOR].value *= WIND_SENSOR_ADC_REF;
-			anem_info[WIND_DIR_SENSOR].value /= WIND_SENSOR_ADC_MAX_VAL;
-			PRINTF("Wind Sensor (DRCTN): value function - mv ADC value = %u\n", anem_info[WIND_DIR_SENSOR].value);
+			if (val > WIND_SENSOR_ADC_MAX_VAL)
+				val = WIND_SENSOR_ADC_MAX_VAL;
+			val *= WIND_SENSOR_ADC_REF;
+			val /= WIND_SENSOR_ADC_MAX_VAL;
+			PRINTF("Wind Sensor (DRCTN): value function - mv ADC value = %u\n", val);
 			
-			anem_info[WIND_DIR_SENSOR].value = ConvertValToWindOutput(type, anem_info[WIND_DIR_SENSOR].value);
+			anem_info[WIND_DIR_SENSOR].value = ConvertValToWindOutput(type, val);
 			PRINTF("Wind Sensor (DRCTN): value function - value = 0x%04x\n", anem_info[WIND_DIR_SENSOR].value);
 			
 			return anem_info[WIND_DIR_SENSOR].value;
