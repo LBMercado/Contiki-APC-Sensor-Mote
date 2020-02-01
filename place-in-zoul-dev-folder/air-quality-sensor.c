@@ -26,8 +26,8 @@
 //tolerance values
 #define RESRATIO_TOLERANCE       0.005
 /*------------------------------------------------------------------*/
-#define AQS_ADC_REF      5000
-#define AQS_ADC_MAX_VAL  32768  //15-bits ENOB ADC
+#define AQS_ADC_REF       50000  // in mV, sf. 1 dec. digit
+#define AQS_ADC_CROSSREF  33000  // in mV, sf. 1 dec. digit
 /*------------------------------------------------------------------*/
 #define DEBUG 0
 #if DEBUG
@@ -78,7 +78,7 @@ ConvertRawValToPPM(const uint8_t type, uint32_t value)
 	float val; //will be Rs/Ro in datasheet
 	/* rs = sensor resistance in various conditions*/
 	uint32_t rs; //(in milliohms)
-	val = value;
+	val = (float)value / 10; // sf. 1 decimal digit
 	
 	switch (type)
 	{
@@ -264,40 +264,43 @@ ConvertRawValToSensorRes(const uint8_t type, uint32_t value)
 	{
 	case MQ7_SENSOR:	
 		/* Refer to datasheet
-					RS = ( (Vc – VRL) / VRL ) * RL
-					Where:
-						Vc = source voltage at time of measurement (5V or 1.4V)
-						VRL = reference resistor voltage, output of A0 Pin
-						*RL = reference resistor
-						
-						*assumed to be valued around ~5 - ~20 Ω
-			*/
-		value = ( ( 5000 - value ) / (float)value ) * (MQ7_RL_KOHM * KOHM_SCALETO_MILLIOHM);
+		*	RS = ( (Vc – VRL) / VRL ) * RL
+		*	Where:
+		*		Vc = source voltage at time of measurement (5V or 1.4V)
+		*		VRL = reference resistor voltage, output of A0 Pin
+		*		*RL = reference resistor
+		*		
+		*		*assumed to be valued around ~5 - ~20 Ω
+		*/
+		// consider the precision of the raw value (sf. 1st decimal digit)
+		value = ( ( 5000 - (float)value / 10 ) / ( (float)value / 10 ) ) * (MQ7_RL_KOHM * KOHM_SCALETO_MILLIOHM);
 		return value;
 	case MQ131_SENSOR:
 		/* Refer to datasheet
-					RS = ( Vc / VRL - 1 ) × RL
-					Where:
-						Vc = source voltage at time of measurement (5V)
-						VRL = reference resistor voltage, output of A0 Pin
-						*RL = reference resistor
-						
-						*assumed to be valued around ~5 - ~20 Ω
-				*/
-		value = ( ( 5000 / (float)value ) - 1 ) * ( MQ131_RL_KOHM * KOHM_SCALETO_MILLIOHM );
+		*	RS = ( Vc / VRL - 1 ) × RL
+		*	Where:
+		*		Vc = source voltage at time of measurement (5V)
+		*		VRL = reference resistor voltage, output of A0 Pin
+		*		*RL = reference resistor
+		*		
+		*		*assumed to be valued around ~5 - ~20 Ω
+		*/
+		// consider the precision of the raw value (sf. 1st decimal digit)
+		value = ( ( 5000 / (float)value / 10 ) - 1 ) * ( MQ131_RL_KOHM * KOHM_SCALETO_MILLIOHM);
 		return value;
 		break;
 	case MQ135_SENSOR:
 		/* Refer to datasheet
-					RS = ( Vc / VRL - 1 ) × RL
-					Where:
-						Vc = source voltage at time of measurement (5V)
-						VRL = reference resistor voltage, output of A0 Pin
-						*RL = reference resistor
-						
-						*assumed to be valued around ~5 - ~20 Ω
-				*/
-		value = ( ( 5000 / (float)value ) - 1 ) * ( MQ135_RL_KOHM * KOHM_SCALETO_MILLIOHM );
+		*	RS = ( Vc / VRL - 1 ) × RL
+		*	Where:
+		*		Vc = source voltage at time of measurement (5V)
+		*		VRL = reference resistor voltage, output of A0 Pin
+		*		*RL = reference resistor
+		*		
+		*		*assumed to be valued around ~5 - ~20 Ω
+		*/
+		// consider the precision of the raw value (sf. 1st decimal digit)
+		value = ( ( 5000 / (float)value / 10 ) - 1 ) * ( MQ135_RL_KOHM * KOHM_SCALETO_MILLIOHM );
 		return value;
 		break;
 	default:
@@ -341,12 +344,12 @@ measure_aqs_ro(const void* data_ptr)
 		return 0;
 	}
 	PRINTF("measure_aqs: sensor(0x%02x) raw ADC value = %lu\n", aqs_info_data->sensorType, val);
-	if (val > AQS_ADC_MAX_VAL)
-		val = AQS_ADC_MAX_VAL;
 
+	/* 512 bit resolution, output is in mV already (significant to the tenth decimal place) */
+	/* convert 3v ref to 5v ref */
 	val *= AQS_ADC_REF;
-	val /= AQS_ADC_MAX_VAL;
-	PRINTF("measure_aqs_ro: sensor(0x%02x) mv ADC value = %lu\n", aqs_info_data->sensorType, val);
+	val /= AQS_ADC_CROSSREF;
+	PRINTF("measure_aqs_ro: sensor(0x%02x) mv ADC value = %lu.%lu\n", aqs_info_data->sensorType, val / 10, val % 10);
 	
 	val = ConvertRawValToSensorRes(aqs_info_data->sensorType, val);
 	PRINTF("measure_aqs_ro: sensor(0x%02x) sensor resistance (milli) = %lu\n", aqs_info_data->sensorType, val);
@@ -382,20 +385,21 @@ measure_aqs(const void* data_ptr)
 	
 	aqs_info[aqs_info_data->sensorType].state = AQS_BUSY;
 	PRINTF("measure_aqs: sensor(0x%02x) set to BUSY.\n", aqs_info_data->sensorType);
-		
+	
 	val = adc_zoul.value(aqs_info_data->measure_pin_mask);
 	if (val == ZOUL_SENSORS_ERROR){
 		PRINTF("measure_aqs: sensor(0x%02x) failed to get value from ADC sensor\n", aqs_info_data->sensorType);
 		return;
 	}
+	
 	PRINTF("measure_aqs: sensor(0x%02x) raw ADC value = %lu\n", aqs_info_data->sensorType, val);
-	if (val > AQS_ADC_MAX_VAL)
-		val = AQS_ADC_MAX_VAL;
-
+	
+	/* 512 bit resolution, output is in mV already (significant to the tenth decimal place) */
+	/* convert 3v ref to 5v ref */
 	val *= AQS_ADC_REF;
-	val /= AQS_ADC_MAX_VAL;
+	val /= AQS_ADC_CROSSREF;
 
-	PRINTF("measure_aqs: sensor(0x%02x) mv ADC value = %lu\n", aqs_info_data->sensorType, val);
+	PRINTF("measure_aqs: sensor(0x%02x) mv ADC value = %lu.%lu\n", aqs_info_data->sensorType, val / 10, val % 10);
 	
 	aqs_info[aqs_info_data->sensorType].value = ConvertRawValToPPM(aqs_info_data->sensorType, val);
 	PRINTF("measure_aqs: sensor(0x%02x) ppm value = %u.%03u\n", aqs_info_data->sensorType, 
