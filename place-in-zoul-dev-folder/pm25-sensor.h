@@ -9,8 +9,8 @@
 #define PM25_SUCCESS                 0x00
 #define PM25_SENSOR                  "PM25 Sensor (GP2Y1014AU0f)"
 #define PM25_SENSOR_PULSE_DELAY      320 //refer to datasheet of GP2Y1014AU0f
-#define PM25_ADC_REF                 5000
-#define PM25_ADC_MAX_VAL             32768 //15-bits ENOB ADC
+#define PM25_ADC_REF                 50000 //in mV, sf. 1st decimal place
+#define PM25_ADC_CROSSREF            33000 //in mV, sf. 1st decimal place
 /* -------------------------------------------------------------------------- */
 #define PM25_DISABLE                 0x00
 #define PM25_ENABLE                  0x01

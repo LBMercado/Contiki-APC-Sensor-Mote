@@ -10,9 +10,10 @@
 #define MS_SCALETO_CMS             100
 /*--------------------------------------------------------------------------------*/
 #define WIND_SPEED_TOLERANCE       100 //(in cm/s)
+#define WIND_DRCTN_TOLERANCE       3   // (in degrees)
 /*--------------------------------------------------------------------------------*/
-#define WIND_SENSOR_ADC_REF        5000
-#define WIND_SENSOR_ADC_MAX_VAL    32768  //15-bits ENOB ADC
+#define WIND_SENSOR_ADC_REF        50000 //in mV, sf. 1st decimal place
+#define WIND_SENSOR_ADC_CROSSREF   33000 //in mV, sf. 1st decimal place
 /*--------------------------------------------------------------------------------*/
 #define DEBUG 0
 #if DEBUG
@@ -40,17 +41,17 @@ ConvertValToWindOutput(uint8_t type, uint32_t val){
 		case WIND_SPEED_SENSOR:	
 			//Convert voltage value to wind speed using range of max and min voltages and wind speed for the
 			//anemometer
-			if (val <= WIND_ANALOG_V_MIN * VOLT_SCALETO_MILLIV){
+			//Consider precision of val input (sf. 1st dec. place)
+			if ( (val % 10 > 4 ? val / 10 + 1 : val / 10) <= WIND_ANALOG_V_MIN * VOLT_SCALETO_MILLIV){
 				val = WIND_MIN_SPEED;
 			}
 			else {
 				//For voltages above minimum value, use the linear relationship to calculate wind speed.
 				float fVal = val;
+				fVal /= 10;
 				fVal = ( fVal - WIND_ANALOG_V_MIN * VOLT_SCALETO_MILLIV ) * WIND_MAX_SPEED / ( WIND_ANALOG_V_MAX * VOLT_SCALETO_MILLIV - WIND_ANALOG_V_MIN * VOLT_SCALETO_MILLIV );
 				
 				val = fVal * MS_SCALETO_CMS;
-				
-				return val;
 			}
 			
 			return val;
@@ -63,20 +64,21 @@ ConvertValToWindOutput(uint8_t type, uint32_t val){
 			//consider the initial position of the sensor
 			int direction;
 			direction = (int)val - init_pos_value;
+			direction -= WIND_DRCTN_TOLERANCE;
 			
 			if      (direction > 360)
 				direction -= 360;
 			else if (direction < 0)
 				direction += 360;
 			
-			if		(direction < 45)  val = WIND_DIR_NORTH;
-			else if (direction < 90)  val = WIND_DIR_NORTH | WIND_DIR_EAST;
-			else if (direction < 135) val = WIND_DIR_EAST;
-			else if (direction < 180) val = WIND_DIR_SOUTH | WIND_DIR_EAST;
-			else if (direction < 225) val = WIND_DIR_SOUTH;
-			else if (direction < 270) val = WIND_DIR_SOUTH | WIND_DIR_WEST;
-			else if (direction < 315) val = WIND_DIR_WEST;
-			else if (direction < 360) val = WIND_DIR_NORTH | WIND_DIR_WEST;
+			if		(direction < 23)  val = WIND_DIR_NORTH;
+			else if (direction < 68)  val = WIND_DIR_NORTH | WIND_DIR_EAST;
+			else if (direction < 113) val = WIND_DIR_EAST;
+			else if (direction < 158) val = WIND_DIR_SOUTH | WIND_DIR_EAST;
+			else if (direction < 203) val = WIND_DIR_SOUTH;
+			else if (direction < 248) val = WIND_DIR_SOUTH | WIND_DIR_WEST;
+			else if (direction < 293) val = WIND_DIR_WEST;
+			else if (direction < 338) val = WIND_DIR_NORTH | WIND_DIR_WEST;
 			else 				val = WIND_DIR_NORTH;
 			
 			return val;
@@ -180,21 +182,19 @@ value(int type){
 				return WIND_SENSOR_ERROR;
 			}
 
-			/*512 bit resolution, output is in mV already*/
 			val = adc_zoul.value(WIND_SPEED_SENSOR_PIN_MASK);
 			if (val == ZOUL_SENSORS_ERROR){
 				PRINTF("Error@WIND_SENSOR(SPEED): value function - failed to get value from ADC sensor\n");
 				anem_info[WIND_SPEED_SENSOR].value = 0;
 				return WIND_SENSOR_ERROR;
 			}
-			PRINTF("Wind Sensor (SPEED): value function - raw ADC value = %u\n", val);
+			PRINTF("Wind Sensor (SPEED): value function - raw ADC value = %lu\n", val);
 
-			if (val > WIND_SENSOR_ADC_MAX_VAL)
-				val = WIND_SENSOR_ADC_MAX_VAL;
-
+			/* 512 bit resolution, output is in mV already (significant to the tenth decimal place) */
+			/* convert 3v ref to 5v ref */
 			val *= WIND_SENSOR_ADC_REF;
-			val /= WIND_SENSOR_ADC_MAX_VAL;
-			PRINTF("Wind Sensor (SPEED): value function - mv ADC value = %u\n", val);
+			val /= WIND_SENSOR_ADC_CROSSREF;
+			PRINTF("Wind Sensor (SPEED): value function - mv ADC value = %lu.%lu\n", val / 10, val % 10);
 			
 			anem_info[WIND_SPEED_SENSOR].value = ConvertValToWindOutput(type, val);
 
@@ -210,20 +210,19 @@ value(int type){
 				PRINTF("ERROR@WIND_SENSOR(DRCTN): Sensor is disabled. Enable with configure function.\n");
 				return WIND_SENSOR_ERROR;
 			}
-			/*512 bit resolution, output is in mV already*/
 			val = adc_zoul.value(WIND_DIR_SENSOR_PIN_MASK);
 			if (val == ZOUL_SENSORS_ERROR){
 				PRINTF("Error for Wind Sensor (DRCTN): value function - failed to get value from ADC sensor\n");
 				anem_info[WIND_DIR_SENSOR].value = 0;
 				return WIND_SENSOR_ERROR;
 			}
-			PRINTF("Wind Sensor (DRCTN): value function - raw ADC value = %u\n", val);
+			PRINTF("Wind Sensor (DRCTN): value function - raw ADC value = %lu\n", val);
 
-			if (val > WIND_SENSOR_ADC_MAX_VAL)
-				val = WIND_SENSOR_ADC_MAX_VAL;
+			/* 512 bit resolution, output is in mV already (significant to the tenth decimal place) */
+			/* convert 3v ref to 5v ref */
 			val *= WIND_SENSOR_ADC_REF;
-			val /= WIND_SENSOR_ADC_MAX_VAL;
-			PRINTF("Wind Sensor (DRCTN): value function - mv ADC value = %u\n", val);
+			val /= WIND_SENSOR_ADC_CROSSREF;
+			PRINTF("Wind Sensor (DRCTN): value function - mv ADC value = %lu.%lu\n", val / 10, val % 10);
 			
 			anem_info[WIND_DIR_SENSOR].value = ConvertValToWindOutput(type, val);
 			PRINTF("Wind Sensor (DRCTN): value function - value = 0x%04x\n", anem_info[WIND_DIR_SENSOR].value);
