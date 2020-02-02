@@ -350,6 +350,15 @@ print_local_addresses(void* data)
 }
 /*----------------------------------------------------------------------------------*/
 static void
+print_local_dev_info()
+{
+	int temp = cc2538_temp_sensor.value(CC2538_SENSORS_VALUE_TYPE_CONVERTED);
+	
+	printf("VDD3 = %d mV\n", vdd3_sensor.value(CC2538_SENSORS_VALUE_TYPE_CONVERTED));
+	printf("Internal Temperature = %d.%d deg. C\n", temp / 1000, temp % 1000);
+}
+/*----------------------------------------------------------------------------------*/
+static void
 net_join_as_collector
 ()
 {
@@ -652,6 +661,7 @@ PROCESS_THREAD(apc_sensor_node_en_sensors_process, ev, data)
 		PRINTF("apc_sensor_node_en_sensors_process: Sensor(0x%01x): %s\n", sensor_readings[i].type,
 		activate_sensor(sensor_readings[i].type) == OPERATION_FAILED ? "ERROR\0" : "OK\0" );
 	}
+	print_local_dev_info();
 	leds_off(LEDS_YELLOW);
 	process_start(&apc_sensor_node_collect_gather_process, NULL);
 	PROCESS_END();
