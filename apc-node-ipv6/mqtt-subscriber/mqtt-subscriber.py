@@ -1,5 +1,6 @@
 import paho.mqtt.client as mqtt
 import data_access
+import weather_access
 import json
 
 """ MQTT Parameters """
@@ -9,14 +10,16 @@ mqtt_port = 1883
 keep_alive_time = 60
 topic = "apc-iot/#"
 qos_level = 0
+client = mqtt.Client(subscriber_id, protocol=mqtt.MQTTv31)
 """ Database Parameters """
 db_name = "apc-iot"
 db_address = "localhost"
 db_port = 27017
 record = "apc_data"
-client = mqtt.Client(subscriber_id, protocol=mqtt.MQTTv31)
 data = data_access.DataAccess(db_address, db_port)
-
+""" Weather API Parameters """
+api_key = weather_access.get_api_key()
+location = "Manila,ph"
 
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
@@ -34,20 +37,31 @@ def on_message(client, userdata, message):
     print(message.topic.decode('utf-8') + " " + str(message.payload).decode('utf-8'))
     if data.is_connection_active:
         doc = json.loads(str(message.payload))
+        
+        weather = weather_access.get_weather(api_key, location)
+        if weather is not None:
+            weatherList = []
+            for weatherInfo in weather:
+                weatherList.append(weatherInfo['main'])
+            doc['weather'] = weatherList;
+        else:
+            doc['weather'] = [];
         data.insert_document(record, doc)
     else:
         print("Database is not active")
 
-
-# def on_log(client, userdata, level, buf):
-#     print(buf)
+# debug logger
+def on_log(client, userdata, level, buf):
+    print(buf)
 
 def main():
-    data.connect_db(db_name)
-    # client.on_log = on_log
+    client.on_log = on_log
     client.on_connect = on_connect
     client.on_message = on_message
+    
     client.connect(address, mqtt_port, keep_alive_time)
+    data.connect_db(db_name)
+    
     # Blocking call that processes network traffic, dispatches callbacks and
     # handles reconnecting.
     # Other loop*() functions are available that give a threaded interface and a
@@ -56,4 +70,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main();
+    main()
