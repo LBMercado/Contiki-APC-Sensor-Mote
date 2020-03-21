@@ -6,21 +6,26 @@
 #include "net/ip/uip.h"
 /*---------------------------------------------------------*/
 /* This defines the maximum amount of sensor nodes we can remember. */
-#define MAX_SENSOR_NODES 3
+#define MAX_SENSOR_NODES            3
 /*---------------------------------------------------------*/
-#define LOCAL_ADDR_PRINT_INTERVAL 30
-#define PREFIX_UPDATE_INTERVAL 20
+#define LOCAL_ADDR_PRINT_INTERVAL   30
+#define PREFIX_UPDATE_INTERVAL      20
+/*---------------------------------------------------------*/
+//define the number of sensors for each sensor node (each data value is categorized as a sensor)
+#define SENSOR_COUNT                8
+//define the number of sensors with initial calibration values
+#define SENSOR_CALIB_COUNT          3
 /*---------------------------------------------------------*/
 //these are the types of data that can be communicated between sensor nodes and the sink node
-enum
+typedef enum
 {
 	//request/reply headers
 	COLLECTOR_ADV, //advertise as collector mote
 	COLLECTOR_ACK, //acknowledge as collector mote
 	SINK_ADV, //advertise as sink mote
 	SINK_ACK, //acknowledge as sink mote
-	DATA_REQUEST,
-	DATA_ACK,
+	DATA_REQUEST, //request data from collector mote
+	DATA_ACK, //acknowledge data request
 	
 	//error headers
 	SENSOR_FAILED, //failed to read sensor values
@@ -34,19 +39,29 @@ enum
 	CO2_T, //unit in ppm
 	O3_T, //unit in ppm
 	WIND_SPEED_T, //unit in m/s
-	WIND_DRCTN_T //may be N, S, E, W and their combinations
-};
-/*---------------------------------------------------------*/
-typedef struct {
-	uint32_t seq;
-	uint8_t type;
-	char data[8];
-} node_data_t;
+	WIND_DRCTN_T, //may be N, S, E, W and their combinations
+
+	//calibration values that denote initial config of sensor
+	CO_RO_T,
+	CO2_RO_T,
+	O3_RO_T
+} apc_iot_message_t;
 /*---------------------------------------------------------*/
 typedef struct {
 	uint8_t type;
 	char data[8];
 } sensor_reading_t;
+/*---------------------------------------------------------*/
+typedef struct {
+	uint8_t size;
+	sensor_reading_t readings[SENSOR_COUNT + SENSOR_CALIB_COUNT];
+} sensor_data_t;
+/*---------------------------------------------------------*/
+typedef struct {
+	uint32_t seq;
+	uint8_t type;
+	sensor_data_t reading;
+} node_data_t;
 /*---------------------------------------------------------*/
 //REF: example-neighbors.c in contiki examples
 /* This structure holds information about sensor nodes. */
@@ -67,6 +82,9 @@ typedef struct sensor_node {
 	char O3[8];          //unit in ppm
 	char windSpeed[8];   //unit in m/s
 	char windDir[2];     //may be N, S, E, W and their combinations (NW, NE, SW, SE)
+	char CO_RO[8];       //base resistance of sensor in ohms, sf. in 3 decimal digits
+	char CO2_RO[8];       //base resistance of sensor in ohms, sf. in 3 decimal digits
+	char O3_RO[8];       //base resistance of sensor in ohms, sf. in 3 decimal digits
 } sensor_node_t;
 /*---------------------------------------------------------*/
 void
@@ -81,5 +99,5 @@ set_remote_ip_addresses(uip_ipaddr_t* prefix_64, uip_ipaddr_t* remote_addr);
 void
 update_ip_addresses_prefix(void* prefix_64);
 /*---------------------------------------------------------*/
-#endif
+#endif /* ifndef APC_COMMON_H */
 /*---------------------------------------------------------*/

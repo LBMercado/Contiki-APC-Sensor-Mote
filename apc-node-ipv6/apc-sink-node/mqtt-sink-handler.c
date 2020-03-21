@@ -24,7 +24,7 @@
 /* Contiki Apps */
 #include "mqtt.h"
 /* Project Sourcefiles */
-#include "mqtt-handler.h"
+#include "mqtt-sink-handler.h"
 /*---------------------------------------------------------------------------*/
 #define DEBUG DEBUG_PRINT
 #include "net/ip/uip-debug.h"
@@ -462,6 +462,27 @@ update_mqtt_sensor_data
 		PRINT6ADDR(&node->addr);
 		PRINTF(") UPDATED with value: %s\n", node->windDir);
 		break;
+	case CO_RO_T:
+		strcpy(node->CO_RO, newData->data);
+
+		PRINTF("MQTT - CO_RO_T of sensor node (");
+		PRINT6ADDR(&node->addr);
+		PRINTF(") UPDATED with value: %s\n", node->CO_RO);
+		break;
+	case CO2_RO_T:
+		strcpy(node->CO2_RO, newData->data);
+
+		PRINTF("MQTT - CO2_RO_T of sensor node (");
+		PRINT6ADDR(&node->addr);
+		PRINTF(") UPDATED with value: %s\n", node->CO2_RO);
+		break;
+	case O3_RO_T:
+		strcpy(node->O3_RO, newData->data);
+
+		PRINTF("MQTT - O3_RO_T of sensor node (");
+		PRINT6ADDR(&node->addr);
+		PRINTF(") UPDATED with value: %s\n", node->O3_RO);
+		break;
 	default:
 		PRINTF("MQTT - Failed to update sensor node (");
 		PRINT6ADDR(&node->addr);
@@ -604,13 +625,65 @@ pub_sensor_data
 				return;
 			}
 			
+			//Initial calibration values list
 			remaining -= len;
 			buf_ptr += len;
+			len = snprintf(buf_ptr, remaining, ",\"calibration\":[");
+			if(len < 0 || len >= remaining) {
+				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
+				return;
+			}
+
+			//CO calibration value
+			remaining -= len;
+			buf_ptr += len;
+			len = snprintf(buf_ptr, remaining, "\"CO Rs (Ohms)\":%s,",
+					strcmp(n->CO_RO,"") ? n->CO_RO : "-1");
+			if(len < 0 || len >= remaining) {
+				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
+				return;
+			}
+			remaining -= len;
+			buf_ptr += len;
+
+			//CO2 calibration value
+			len = snprintf(buf_ptr, remaining, "\"CO2 Rs (Ohms)\":%s,",
+					strcmp(n->CO2_RO, "") ? n->CO2_RO : "-1");
+			if(len < 0 || len >= remaining) {
+				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
+				return;
+			}
+			remaining -= len;
+			buf_ptr += len;
+
+			//O3 calibration value
+			len = snprintf(buf_ptr, remaining, "\"O3 Rs (Ohms)\":%s",
+					strcmp(n->O3_RO, "") ? n->O3_RO : "-1");
+			if(len < 0 || len >= remaining) {
+				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
+				return;
+			}
+			remaining -= len;
+			buf_ptr += len;
+
+			//enclose the calibration values list
+			len = snprintf(buf_ptr, remaining, "]");
+			if(len < 0 || len >= remaining) {
+				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
+				return;
+			}
+			remaining -= len;
+			buf_ptr += len;
+
+			//enclose the node
 			len = snprintf(buf_ptr, remaining, "}");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
 				return;
 			}
+			remaining -= len;
+			buf_ptr += len;
+
 			n = list_item_next(n);
 		}
 	}
