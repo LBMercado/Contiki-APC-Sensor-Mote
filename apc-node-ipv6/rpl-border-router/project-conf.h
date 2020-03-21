@@ -54,11 +54,11 @@
 #endif
 
 #ifndef QUEUEBUF_CONF_NUM
-#define QUEUEBUF_CONF_NUM          16
+#define QUEUEBUF_CONF_NUM       24
 #endif
 
 #ifndef UIP_CONF_BUFFER_SIZE
-#define UIP_CONF_BUFFER_SIZE    140
+#define UIP_CONF_BUFFER_SIZE    500
 #endif
 
 #ifndef UIP_CONF_RECEIVE_WINDOW

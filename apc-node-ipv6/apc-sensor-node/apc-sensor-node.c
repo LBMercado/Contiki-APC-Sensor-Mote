@@ -27,6 +27,29 @@
 /*---------------------------------------------------------------------------*/
 #define DEBUG DEBUG_PRINT
 #include "net/ip/uip-debug.h"
+/*---------------------------------------------------------------------------*/
+#if !NETSTACK_CONF_WITH_IPV6 || !UIP_CONF_ROUTER || !UIP_CONF_IPV6_RPL
+#error "APC-Sink-Node will be unable to function properly with this current contiki configuration."
+#error "Check the values of: NETSTACK_CONF_WITH_IPV6, UIP_CONF_ROUTER, UIP_CONF_IPV6_RPL"
+#endif
+/*----------------------------------------------------------------------------------*/
+const uint8_t SENSOR_TYPES[SENSOR_COUNT] = {
+	TEMPERATURE_T, //unit in Deg. Celsius
+	HUMIDITY_T, //unit in %RH
+	PM25_T, //unit in microgram per m3
+	CO_T, //unit in ppm
+	CO2_T, //unit in ppm
+	O3_T, //unit in ppm
+	WIND_SPEED_T, //unit in m/s
+	WIND_DRCTN_T //may be N, S, E, W and their combinations
+};
+/*----------------------------------------------------------------------------------*/
+const uint8_t SENSOR_CALIB_TYPES[SENSOR_CALIB_COUNT] =
+{
+	CO_RO_T, //unit in ohms, sf. by 3 digits
+	CO2_RO_T, //unit in ohms, sf. by 3 digits
+	O3_RO_T //unit in ohms, sf. by 3 digits
+};
 /*----------------------------------------------------------------------------------*/
 /* Collect data from sensors every 3 minutes */
 #define APC_SENSOR_NODE_READ_INTERVAL_SECONDS             15
@@ -34,13 +57,31 @@
 #define APC_SENSOR_NODE_SINK_DEADTIME_SECONDS             60
 #define UIP_IP_BUF                                        ( (struct uip_ip_hdr*) & uip_buf[UIP_LLH_LEN] )
 /*----------------------------------------------------------------------------------*/
+typedef struct{
+	uint8_t sensorType;
+	uint8_t isCalibrated; //used only during calibration procedures
+	char sensor_reading[8];
+	char sensor_calib_reading[8]; //used only for read_calib_sensor
+} sensor_info_t;
+/*----------------------------------------------------------------------------------*/
+static sensor_info_t sensor_infos[SENSOR_COUNT];
+/*----------------------------------------------------------------------------------*/
 static struct timer sink_dead_timer;
+/*----------------------------------------------------------------------------------*/
 static struct uip_udp_conn* collect_conn;
+static uip_ipaddr_t collect_addr;
 static uip_ipaddr_t sink_addr;
 static uip_ipaddr_t sink_addr_pref;
 static uip_ipaddr_t prefix;
-static sensor_reading_t sensor_readings[SENSOR_COUNT];
+/*----------------------------------------------------------------------------------*/
 static uint32_t seqNo;
+/*----------------------------------------------------------------------------------*/
+PROCESS(apc_sensor_node_network_init_process, "APC Sensor Node (Network Initialization) Process Handler");
+PROCESS(apc_sensor_node_collect_adv_process, "APC Sensor Node (Collector Advertise) Process Handler");
+PROCESS(apc_sensor_node_collect_gather_process, "APC Sensor Node (Collector Gather) Process Handler");
+PROCESS(apc_sensor_node_en_sensors_process, "APC Sensor Node (Sensor Initialization) Process Handler");
+/*----------------------------------------------------------------------------------*/
+AUTOSTART_PROCESSES(&apc_sensor_node_network_init_process, &apc_sensor_node_en_sensors_process);
 /*----------------------------------------------------------------------------------*/
 static int
 activate_sensor
@@ -50,269 +91,487 @@ activate_sensor
 	case HUMIDITY_T:
 	case TEMPERATURE_T:
 		retCode = SENSORS_ACTIVATE(dht22);
-		return retCode != DHT22_ERROR ? OPERATION_SUCCESS : OPERATION_FAILED;
+		return retCode != DHT22_ERROR ? APC_SENSOR_OPSUCCESS : APC_SENSOR_OPFAILURE;
 		break;
 	case PM25_T:
 		retCode = pm25.configure(SENSORS_ACTIVE, PM25_ENABLE);
-		return retCode != PM25_ERROR ? OPERATION_SUCCESS : OPERATION_FAILED;
+		return retCode != PM25_ERROR ? APC_SENSOR_OPSUCCESS : APC_SENSOR_OPFAILURE;
 		break;
 	case CO_T:
-		retCode = aqs_sensor.configure(SENSORS_ACTIVE, MQ7_SENSOR);
-		return retCode != AQS_ERROR ? OPERATION_SUCCESS : OPERATION_FAILED;
+		retCode = aqs_sensor.configure(AQS_ENABLE, MQ7_SENSOR);
+		return retCode != AQS_ERROR ? APC_SENSOR_OPSUCCESS : APC_SENSOR_OPFAILURE;
 		break;
 	case CO2_T:
-		retCode = aqs_sensor.configure(SENSORS_ACTIVE, MQ135_SENSOR);
-		return retCode != AQS_ERROR ? OPERATION_SUCCESS : OPERATION_FAILED;
+		retCode = aqs_sensor.configure(AQS_ENABLE, MQ135_SENSOR);
+		return retCode != AQS_ERROR ? APC_SENSOR_OPSUCCESS : APC_SENSOR_OPFAILURE;
 		break;
 	case O3_T:
-		retCode = aqs_sensor.configure(SENSORS_ACTIVE, MQ131_SENSOR);
-		return retCode != AQS_ERROR ? OPERATION_SUCCESS : OPERATION_FAILED;
+		retCode = aqs_sensor.configure(AQS_ENABLE, MQ131_SENSOR);
+		return retCode != AQS_ERROR ? APC_SENSOR_OPSUCCESS : APC_SENSOR_OPFAILURE;
 		break;
 	case WIND_SPEED_T:
 		retCode = anem_sensor.configure(SENSORS_ACTIVE, WIND_SPEED_SENSOR);
-		return retCode != WIND_SENSOR_ERROR ? OPERATION_SUCCESS : OPERATION_FAILED;
+		return retCode != WIND_SENSOR_ERROR ? APC_SENSOR_OPSUCCESS : APC_SENSOR_OPFAILURE;
 		break;
 	case WIND_DRCTN_T:
 		retCode = anem_sensor.configure(SENSORS_ACTIVE, WIND_DIR_SENSOR);
-		return retCode != WIND_SENSOR_ERROR ? OPERATION_SUCCESS : OPERATION_FAILED;
+		return retCode != WIND_SENSOR_ERROR ? APC_SENSOR_OPSUCCESS : APC_SENSOR_OPFAILURE;
 		break;
 	default:
 		PRINTF("activate_sensor: Unknown sensor type given.\n");
-		return OPERATION_FAILED;
+		return APC_SENSOR_OPFAILURE;
+	}
+}
+/*----------------------------------------------------------------------------------*/
+static uint8_t
+is_calibrated_sensor
+(uint8_t sensorType){
+	for (int i = 0; i < SENSOR_COUNT; i++){
+		if ( sensor_infos[i].sensorType == sensorType ){
+			return sensor_infos[i].isCalibrated;
+		}
+	}
+	PRINTF("is_calibrated_sensor: ERROR - invalid sensor type specified.\n");
+	return APC_SENSOR_OPFAILURE;
+}
+/*----------------------------------------------------------------------------------*/
+static int
+get_index_from_sensor_type
+(uint8_t sensorType){
+	for(int i = 0; i < SENSOR_COUNT; i++){
+		if (sensor_infos[i].sensorType == sensorType)
+			return i;
+	}
+	PRINTF("get_index_from_sensor_type: ERROR - invalid sensor type specified.\n");
+	return APC_SENSOR_OPFAILURE;
+}
+/*----------------------------------------------------------------------------------*/
+static int
+map_sensor_to_calib_type
+(uint8_t sensorType){
+	switch(sensorType){
+		case CO_T:
+			return CO_RO_T;
+
+			break;
+		case O3_T:
+			return O3_RO_T;
+
+			break;
+		case CO2_T:
+			return CO2_RO_T;
+
+			break;
+		default:
+			PRINTF("map_sensor_to_calib_type: ERROR - invalid sensor type specified.\n");
+			return APC_SENSOR_OPFAILURE;
+	}
+}
+/*----------------------------------------------------------------------------------*/
+static int
+map_calib_to_sensor_type
+(uint8_t calibType){
+	switch(calibType){
+		case CO_RO_T:
+			return CO_T;
+
+			break;
+		case O3_RO_T:
+			return O3_T;
+
+			break;
+		case CO2_RO_T:
+			return CO2_T;
+
+			break;
+		default:
+			PRINTF("map_calib_to_sensor_type: ERROR - invalid sensor type specified.\n");
+			return APC_SENSOR_OPFAILURE;
+	}
+}
+/*----------------------------------------------------------------------------------*/
+static int
+read_calib_sensor
+(uint8_t sensorType){
+	uint8_t index = get_index_from_sensor_type(sensorType);
+	int value;
+
+	if (index == APC_SENSOR_OPFAILURE){
+		PRINTF("read_calib_sensor: ERROR - invalid sensor type specified. \n");
+		return APC_SENSOR_OPFAILURE;
+	}
+	int calibType = map_sensor_to_calib_type(sensorType);
+
+	switch(calibType){
+		case CO_RO_T:
+			value = aqs_sensor.value(MQ7_SENSOR_RO);
+			if (value == AQS_ERROR){
+				PRINTF("-----------------\n");
+				PRINTF("read_sensor: CO_RO_T \n");
+				PRINTF("Failed to read sensor.\n");
+				PRINTF("-----------------\n");
+				return APC_SENSOR_OPFAILURE;
+			}
+			else if (value == AQS_INITIALIZING){
+				PRINTF("-----------------\n");
+				PRINTF("read_sensor: CO_RO_T \n");
+				PRINTF("sensor is initializing.\n");
+				PRINTF("-----------------\n");
+				return APC_SENSOR_OPFAILURE;
+			}
+			else {
+				sensor_infos[index].isCalibrated = 1;
+				sprintf(sensor_infos[index].sensor_calib_reading,
+				"%d.%03d",
+				value / 1000,
+				value % 1000
+				);
+				PRINTF("-----------------\n");
+				PRINTF("read_sensor: CO_RO_T \n");
+				PRINTF("RO: %d.%03d\n",
+					value / 1000,
+					value % 1000);
+				PRINTF("-----------------\n");
+				return APC_SENSOR_OPSUCCESS;
+			}
+
+			break;
+		case CO2_RO_T:
+			value = aqs_sensor.value(MQ135_SENSOR_RO);
+			if (value == AQS_ERROR){
+				PRINTF("-----------------\n");
+				PRINTF("read_sensor: CO2_RO_T \n");
+				PRINTF("Failed to read sensor.\n");
+				PRINTF("-----------------\n");
+				return APC_SENSOR_OPFAILURE;
+			}
+			else if (value == AQS_INITIALIZING){
+				PRINTF("-----------------\n");
+				PRINTF("read_sensor: CO2_RO_T \n");
+				PRINTF("sensor is initializing.\n");
+				PRINTF("-----------------\n");
+				return APC_SENSOR_OPFAILURE;
+			}
+			else {
+				sensor_infos[index].isCalibrated = 1;
+				sprintf(sensor_infos[index].sensor_calib_reading,
+				"%d.%03d",
+				value / 1000,
+				value % 1000
+				);
+				PRINTF("-----------------\n");
+				PRINTF("read_sensor: CO2_RO_T \n");
+				PRINTF("RO: %d.%03d\n",
+					value / 1000,
+					value % 1000);
+				PRINTF("-----------------\n");
+				return APC_SENSOR_OPSUCCESS;
+			}
+
+			break;
+		case O3_RO_T:
+			value = aqs_sensor.value(MQ131_SENSOR_RO);
+			if (value == AQS_ERROR){
+				PRINTF("-----------------\n");
+				PRINTF("read_sensor: O3_RO_T \n");
+				PRINTF("Failed to read sensor.\n");
+				PRINTF("-----------------\n");
+				return APC_SENSOR_OPFAILURE;
+			}
+			else if (value == AQS_INITIALIZING){
+				PRINTF("-----------------\n");
+				PRINTF("read_sensor: O3_RO_T \n");
+				PRINTF("sensor is initializing.\n");
+				PRINTF("-----------------\n");
+				return APC_SENSOR_OPFAILURE;
+			}
+			else {
+				sensor_infos[index].isCalibrated = 1;
+				sprintf(sensor_infos[index].sensor_calib_reading,
+				"%d.%03d",
+				value / 1000,
+				value % 1000
+				);
+				PRINTF("-----------------\n");
+				PRINTF("read_sensor: O3_RO_T \n");
+				PRINTF("RO: %d.%03d\n",
+					value / 1000,
+					value % 1000);
+				PRINTF("-----------------\n");
+				return APC_SENSOR_OPSUCCESS;
+			}
+
+			break;
+		default:
+			PRINTF("read_calib_sensor: ERROR - invalid sensor type specified.\n");
+			return APC_SENSOR_OPFAILURE;
 	}
 }
 /*----------------------------------------------------------------------------------*/
 static int 
 read_sensor
-(uint8_t sensorType, uint8_t index) {
-	int value1, value2;
+(uint8_t sensorType) {
+	uint8_t index = -1;
+	int value;
+
+	for (int i = 0; i < SENSOR_COUNT; i++){
+		if ( sensor_infos[i].sensorType == sensorType ){
+			index = i;
+			break;
+		}
+	}
+
+	if (index == -1){
+		PRINTF("read_sensor: ERROR - invalid sensor type specified. \n");
+		return APC_SENSOR_OPFAILURE;
+	}
+
 	switch(sensorType){
 		//HUMIDITY_T and TEMPERATURE_T are read at the same sensor
 	case HUMIDITY_T:
-		index--; // humidity is one index above temperature in sensor reading
-	case TEMPERATURE_T:
 		//Assume it is busy
 		do{
-			value1 = dht22.value(DHT22_READ_ALL);
-			if (value1 == DHT22_BUSY)
-			PRINTF("Sensor is busy, retrying...\n");
-		} while (value1 == DHT22_BUSY);
-		if (dht22_read_all(&value1, &value2) != DHT22_ERROR) {
-			sprintf(sensor_readings[index].data, 
+			value = dht22.value(DHT22_READ_HUM);
+			if (value == DHT22_BUSY)
+				PRINTF("Sensor is busy, retrying...\n");
+		} while (value == DHT22_BUSY);
+		if (value != DHT22_ERROR) {
+			sprintf(sensor_infos[index].sensor_reading,
 			"%02d.%02d", 
-			value1 / 10, value2 % 10
-			);
-			sprintf(sensor_readings[index + 1].data, 
-			"%02d.%02d", 
-			value2 / 10, value2 % 10
+			value / 10, value % 10
 			);
 			PRINTF("-----------------\n");
-			PRINTF("read_sensor: TEMPERATURE_T OR HUMIDITY_T \n");
-			PRINTF("Temperature %02d.%02d deg. C, ", value1 / 10, value1 % 10);
-			PRINTF("Humidity %02d.%02d RH\n", value2 / 10, value2 % 10);
+			PRINTF("read_sensor: HUMIDITY_T \n");
+			PRINTF("Humidity %02d.%02d RH\n", value / 10, value % 10);
 			PRINTF("-----------------\n");
-			return OPERATION_SUCCESS;
+			return APC_SENSOR_OPSUCCESS;
 		}
 		else {
 			PRINTF("-----------------\n");
-			PRINTF("read_sensor: TEMPERATURE_T OR HUMIDITY_T \n");
+			PRINTF("read_sensor: HUMIDITY_T \n");
 			PRINTF("Failed to read sensor.\n");
 			PRINTF("-----------------\n");
-			return OPERATION_FAILED;
+			return APC_SENSOR_OPFAILURE;
+		}
+		break;
+	case TEMPERATURE_T:
+		//Assume it is busy
+		do{
+			value = dht22.value(DHT22_READ_TEMP);
+			if (value == DHT22_BUSY)
+				PRINTF("Sensor is busy, retrying...\n");
+		} while (value == DHT22_BUSY);
+		if (value != DHT22_ERROR) {
+			sprintf(sensor_infos[index].sensor_reading,
+			"%02d.%02d", 
+			value / 10, value % 10
+			);
+			PRINTF("-----------------\n");
+			PRINTF("read_sensor: TEMPERATURE_T \n");
+			PRINTF("Temperature %02d.%02d deg. C\n", value / 10, value % 10);
+			PRINTF("-----------------\n");
+			return APC_SENSOR_OPSUCCESS;
+		}
+		else {
+			PRINTF("-----------------\n");
+			PRINTF("read_sensor: TEMPERATURE_T \n");
+			PRINTF("Failed to read sensor.\n");
+			PRINTF("-----------------\n");
+			return APC_SENSOR_OPFAILURE;
 		}
 		break;
 	case PM25_T:
 		//pm sensor only measures one value, parameter does not do anything here
-		value1 = pm25.value(0); 
-		if (value1 == PM25_ERROR){
+		value = pm25.value(0);
+		if (value == PM25_ERROR){
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: PM25_T \n");
 			PRINTF("Failed to read sensor.\n");
 			PRINTF("-----------------\n");
-			return OPERATION_FAILED;
+			return APC_SENSOR_OPFAILURE;
 		}
 		else {
-			sprintf(sensor_readings[index].data, 
+			sprintf(sensor_infos[index].sensor_reading,
 			"%d", 
-			value1
+			value
 			);
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: PM25_T \n");
-			PRINTF("Dust Density: %02d ug/m3\n", value1);
+			PRINTF("Dust Density: %02d ug/m3\n", value);
 			PRINTF("-----------------\n");
-		return OPERATION_SUCCESS;
+		return APC_SENSOR_OPSUCCESS;
 		}
 		break;
 	case CO_T:
-		value1 = aqs_sensor.value(MQ7_SENSOR);
-		if (value1 == AQS_ERROR){
+		value = aqs_sensor.value(MQ7_SENSOR);
+		if (value == AQS_ERROR){
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: CO_T \n");
 			PRINTF("Failed to read sensor.\n");
 			PRINTF("-----------------\n");
-			return OPERATION_FAILED;
+			return APC_SENSOR_OPFAILURE;
 		}
-		else if (value1 == AQS_BUSY){
+		else if (value == AQS_INITIALIZING){
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: CO_T \n");
-			PRINTF("sensor is busy.\n");
+			PRINTF("sensor is initializing.\n");
 			PRINTF("-----------------\n");
-			return OPERATION_FAILED;
+			return APC_SENSOR_OPFAILURE;
 		}
 		else {
-			sprintf(sensor_readings[index].data, 
+			sprintf(sensor_infos[index].sensor_reading,
 			"%d.%03d", 
-			value1 / 1000,
-			value1 % 1000
+			value / 1000,
+			value % 1000
 			);
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: CO_T \n");
 			PRINTF("PPM: %d.%03d\n",
-				value1 / 1000,
-				value1 % 1000);
+				value / 1000,
+				value % 1000);
 			PRINTF("-----------------\n");
-			return OPERATION_SUCCESS;
+			return APC_SENSOR_OPSUCCESS;
 		}
 		break;
 	case CO2_T:
-		value1 = aqs_sensor.value(MQ135_SENSOR);
-		if (value1 == AQS_ERROR){
+		value = aqs_sensor.value(MQ135_SENSOR);
+		if (value == AQS_ERROR){
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: CO2_T \n");
 			PRINTF("Failed to read sensor.\n");
 			PRINTF("-----------------\n");
-			return OPERATION_FAILED;
+			return APC_SENSOR_OPFAILURE;
 		}
-		else if (value1 == AQS_BUSY){
+		else if (value == AQS_INITIALIZING){
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: CO2_T \n");
-			PRINTF("sensor is busy.\n");
+			PRINTF("sensor is initializing.\n");
 			PRINTF("-----------------\n");
-			return OPERATION_FAILED;
+			return APC_SENSOR_OPFAILURE;
 		}
 		else {
-			sprintf(sensor_readings[index].data, 
+			sprintf(sensor_infos[index].sensor_reading,
 			"%d.%03d", 
-			value1 / 1000,
-			value1 % 1000
+			value / 1000,
+			value % 1000
 			);
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: CO2_T \n");
 			PRINTF("PPM: %d.%03d\n", 
-				value1 / 1000,
-				value1 % 1000);
+				value / 1000,
+				value % 1000);
 			PRINTF("-----------------\n");
-			return OPERATION_SUCCESS;
+			return APC_SENSOR_OPSUCCESS;
 		}
 		break;
 	case O3_T:
-		value1 = aqs_sensor.value(MQ131_SENSOR);
-		if (value1 == AQS_ERROR){
+		value = aqs_sensor.value(MQ131_SENSOR);
+		if (value == AQS_ERROR){
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: O3_T \n");
 			PRINTF("Failed to read sensor.\n");
 			PRINTF("-----------------\n");
-			return OPERATION_FAILED;
+			return APC_SENSOR_OPFAILURE;
 		}
-		else if (value1 == AQS_BUSY){
+		else if (value == AQS_INITIALIZING){
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: O3_T \n");
-			PRINTF("sensor is busy.\n");
+			PRINTF("sensor is initializing.\n");
 			PRINTF("-----------------\n");
-			return OPERATION_FAILED;
+			return APC_SENSOR_OPFAILURE;
 		}
 		else {
-			sprintf(sensor_readings[index].data, 
+			sprintf(sensor_infos[index].sensor_reading,
 			"%d.%03d", 
-			value1 / 1000,
-			value1 % 1000
+			value / 1000,
+			value % 1000
 			);
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: O3_T \n");
 			PRINTF("PPM: %d.%03d\n", 
-				value1 / 1000,
-				value1 % 1000);
+				value / 1000,
+				value % 1000);
 			PRINTF("-----------------\n");
-			return OPERATION_SUCCESS;
+			return APC_SENSOR_OPSUCCESS;
 		}
 		break;
 	case WIND_SPEED_T:
-		value1 = anem_sensor.value(WIND_SPEED_SENSOR);
-		if (value1 == WIND_SENSOR_ERROR){
+		value = anem_sensor.value(WIND_SPEED_SENSOR);
+		if (value == WIND_SENSOR_ERROR){
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: WIND_SPEED_T \n");
 			PRINTF("Failed to read sensor.\n");
 			PRINTF("-----------------\n");
-			return OPERATION_FAILED;
+			return APC_SENSOR_OPFAILURE;
 		}
 		else {
-			sprintf(sensor_readings[index].data, 
+			sprintf(sensor_infos[index].sensor_reading,
 			"%d.%02d",
-			value1,
-			value1
+			value,
+			value
 			);
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: WIND_SPEED_T \n");
 			PRINTF("WIND SPEED: %d.%02d m/s\n", 
-				value1 / 100, //whole component
-				(value1 % 100)//frac component
+				value / 100, //whole component
+				(value % 100)//frac component
 			);
 			PRINTF("-----------------\n");
-			return OPERATION_SUCCESS;
+			return APC_SENSOR_OPSUCCESS;
 		}
 		break;
 	case WIND_DRCTN_T:
-		value1 = anem_sensor.value(WIND_DIR_SENSOR);
-		if (value1 == WIND_SENSOR_ERROR){
+		value = anem_sensor.value(WIND_DIR_SENSOR);
+		if (value == WIND_SENSOR_ERROR){
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: WIND_DRCTN_T \n");
 			PRINTF("Failed to read sensor.\n");
 			PRINTF("-----------------\n");
-			return OPERATION_FAILED;
+			return APC_SENSOR_OPFAILURE;
 		}
 		else {
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: WIND_DRCTN_T \n");
-			PRINTF("WIND DRCTN (Raw): 0x%04x\n", value1);
-			switch (value1){
+			PRINTF("WIND DRCTN (Raw): 0x%04x\n", value);
+			switch (value){
 				case WIND_DIR_NORTH:
 					PRINTF("WIND DRCTN (Actual): NORTH\n");
-					sprintf(sensor_readings[index].data, 
+					sprintf(sensor_infos[index].sensor_reading,
 						"N");
 					break;
 				case WIND_DIR_EAST:
 					PRINTF("WIND DRCTN (Actual): EAST\n");
-					sprintf(sensor_readings[index].data, 
+					sprintf(sensor_infos[index].sensor_reading,
 						"E");
 					break;
 				case WIND_DIR_SOUTH:
 					PRINTF("WIND DRCTN (Actual): SOUTH\n");
-					sprintf(sensor_readings[index].data, 
+					sprintf(sensor_infos[index].sensor_reading,
 						"S");
 					break;
 				case WIND_DIR_WEST:
 					PRINTF("WIND DRCTN (Actual): WEST\n");
-					sprintf(sensor_readings[index].data, 
+					sprintf(sensor_infos[index].sensor_reading,
 						"W");
 					break;
 				case WIND_DIR_NORTH | WIND_DIR_EAST:
 					PRINTF("WIND DRCTN (Actual): NORTHEAST\n");
-					sprintf(sensor_readings[index].data, 
+					sprintf(sensor_infos[index].sensor_reading,
 						"NE");
 					break;
 				case WIND_DIR_NORTH | WIND_DIR_WEST:
 					PRINTF("WIND DRCTN (Actual): NORTHWEST\n");
-					sprintf(sensor_readings[index].data, 
+					sprintf(sensor_infos[index].sensor_reading,
 						"NW");
 					break;
 				case WIND_DIR_SOUTH | WIND_DIR_EAST:
 					PRINTF("WIND DRCTN (Actual): SOUTHEAST\n");
-					sprintf(sensor_readings[index].data, 
+					sprintf(sensor_infos[index].sensor_reading,
 						"SE");
 					break;
 				case WIND_DIR_SOUTH | WIND_DIR_WEST:
 					PRINTF("WIND DRCTN (Actual): SOUTHWEST\n");
-					sprintf(sensor_readings[index].data, 
+					sprintf(sensor_infos[index].sensor_reading,
 						"SW");
 					break;
 				default:
@@ -320,11 +579,11 @@ read_sensor
 					break;
 			}
 			PRINTF("-----------------\n");
-			return OPERATION_SUCCESS;
+			return APC_SENSOR_OPSUCCESS;
 		}
 		break;
 	default:
-		return OPERATION_FAILED;
+		return APC_SENSOR_OPFAILURE;
 	}
 }
 /*---------------------------------------------------------------------------*/
@@ -379,15 +638,24 @@ static void
 tcpip_handler(void)
 {
 	node_data_t* msg;
-	uint8_t index;
 	
 	if( uip_newdata() ) {
 		msg = (node_data_t*)uip_appdata;
 		
 		switch( msg->type ){
+			case SINK_ADV:
+				PRINTF("--Identified SINK_ADV \n");
+				if ( !uip_ipaddr_cmp(&UIP_IP_BUF->srcipaddr, &sink_addr_pref) ) {
+					uip_ipaddr_copy(&sink_addr_pref, &UIP_IP_BUF->srcipaddr);
+					PRINTF("Preferred sink address set to (");
+					PRINT6ADDR(&sink_addr_pref);
+					PRINTF(")\n");
+					process_poll(&apc_sensor_node_collect_adv_process);
+				}
+				break;
 			case COLLECTOR_ACK:
 				PRINTF("--Identified COLLECTOR_ACK, resetting dead timer for sink.\n");
-				if (!uip_ipaddr_cmp(&UIP_IP_BUF->srcipaddr,&sink_addr_pref)) {
+				if ( !uip_ipaddr_cmp(&UIP_IP_BUF->srcipaddr,&sink_addr_pref) ) {
 					uip_ipaddr_copy(&sink_addr_pref, &UIP_IP_BUF->srcipaddr);
 					PRINTF("Preferred sink address set to (");
 					PRINT6ADDR(&sink_addr_pref);
@@ -399,18 +667,50 @@ tcpip_handler(void)
 				PRINTF("--Identified DATA_REQUEST, proceeding to data delivery.\n");
 				/* make sure dead timer hasn't expired, and sink address matches source address */
 				if ( !timer_expired(&sink_dead_timer) && uip_ipaddr_cmp( &UIP_IP_BUF->srcipaddr, &sink_addr_pref ) ){
-					for (index = 0; index < SENSOR_COUNT; index++){
-						msg->seq = ++seqNo;
-						msg->type = SENSOR_TYPES[index];
-						sprintf( msg->data, sensor_readings[index].data);
-						
-						PRINTF("Sending packet to sink (");
-						PRINT6ADDR(&sink_addr);
-						PRINTF(") with seq 0x%08lx, type %hu, data %s, size %hu\n",
-							msg->seq, msg->type, msg->data, sizeof(*msg));
-						uip_udp_packet_sendto(collect_conn, msg, sizeof(*msg),
-							&sink_addr, UIP_HTONS(UDP_SINK_PORT));
+					sensor_data_t sensor_data;
+
+					const uint8_t DATA_MAX = SENSOR_COUNT + SENSOR_CALIB_COUNT;
+					uint8_t data_left = DATA_MAX;
+					uint8_t index = 0;
+
+					//actual sensor values
+					for (index = 0; index < SENSOR_COUNT && data_left > 0; index++){
+						sensor_data.readings[data_left - 1].type = sensor_infos[index].sensorType;
+						sprintf(sensor_data.readings[data_left - 1].data, sensor_infos[index].sensor_reading);
+
+						data_left--;
 					}
+					//calibration values
+					for (index = 0; index < SENSOR_CALIB_COUNT && data_left > 0 ; index++){
+						int sensor_type = map_calib_to_sensor_type(SENSOR_CALIB_TYPES[index]);
+						if (sensor_type == APC_SENSOR_OPFAILURE)
+							continue;
+
+						int calib_index = get_index_from_sensor_type(sensor_type);
+						if (calib_index == APC_SENSOR_OPFAILURE)
+							continue;
+
+						sensor_data.readings[data_left - 1].type = SENSOR_CALIB_TYPES[index];
+						sprintf(sensor_data.readings[data_left - 1].data, sensor_infos[calib_index].sensor_calib_reading);
+
+						data_left--;
+					}
+
+					sensor_data.size = DATA_MAX - data_left;
+					PRINTF("%d out of %d sensors read\n", sensor_data.size, DATA_MAX);
+					msg->type = DATA_ACK;
+					msg->seq = ++seqNo;
+					memcpy(&msg->reading, &sensor_data, sizeof(sensor_data));
+					PRINTF("%d bytes in sensor data\n", sizeof(sensor_data));
+
+					uint16_t packet_size = sizeof(*msg);
+					PRINTF("Sending packet to sink (");
+					PRINT6ADDR(&sink_addr);
+					PRINTF(") with seq 0x%08lx, type DATA_ACK(%hu), size %hu\n",
+						msg->seq, msg->type, packet_size);
+
+					uip_udp_packet_sendto(collect_conn, msg, packet_size,
+						&sink_addr, UIP_HTONS(UDP_SINK_PORT));
 				}
 				else {
 					PRINTF("(!!!)Sink Dead Timer has expired or source ip address does not match sink address, this node will refuse to send data to sink.\n");
@@ -474,7 +774,7 @@ set_remote_ip_addresses(uip_ipaddr_t* prefix_64, uip_ipaddr_t* sinkAddr)
 	/* Mode 3 - derived from link local (MAC) address */
 	/* hardcoded address */
 	if (prefix_64 == NULL || uip_is_addr_unspecified(prefix_64))
-		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0x0212, 0x4b00, 0x194a, 0x51e1);
+		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0x0212, 0x4b00, 0x1932, 0xe37a);
 	else{ //hardcoded address
 		memcpy(sinkAddr, prefix_64, 16); //copy 64-bit prefix
 		uip_ip6addr(sinkAddr, UIP_HTONS(prefix_64->u16[0]), UIP_HTONS(prefix_64->u16[1]), UIP_HTONS(prefix_64->u16[2]), UIP_HTONS(prefix_64->u16[3]), 0x0212, 0x4b00, 0x1932, 0xe37a);
@@ -511,13 +811,6 @@ update_ip_addresses_prefix(void* prefix_64)
 	}
 }
 /*----------------------------------------------------------------------------------*/
-PROCESS(apc_sensor_node_network_init_process, "APC Sensor Node (Network Initialization) Process Handler");
-PROCESS(apc_sensor_node_collect_adv_process, "APC Sensor Node (Collector Advertise) Process Handler");
-PROCESS(apc_sensor_node_collect_gather_process, "APC Sensor Node (Collector Gather) Process Handler");
-PROCESS(apc_sensor_node_en_sensors_process, "APC Sensor Node (Sensor Initialization) Process Handler");
-/*----------------------------------------------------------------------------------*/
-AUTOSTART_PROCESSES(&apc_sensor_node_network_init_process, &apc_sensor_node_en_sensors_process);
-/*----------------------------------------------------------------------------------*/
 PROCESS_THREAD(apc_sensor_node_collect_adv_process, ev, data)
 {
 	//initialization
@@ -529,13 +822,15 @@ PROCESS_THREAD(apc_sensor_node_collect_adv_process, ev, data)
 	etimer_set(&et_adv, CLOCK_SECOND * APC_SENSOR_NODE_COLLECTOR_ADV_INTERVAL_SECONDS);
 	while(1)
 	{
-		leds_off(LEDS_BLUE);
-		//advertise frequently at set intervals
-		PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et_adv) );
-		leds_on(LEDS_BLUE);
-		PRINTF("apc_sensor_node_collect_adv_process: sending collector advertise to sink.\n");
-		net_join_as_collector();
-		etimer_reset(&et_adv);
+		PROCESS_YIELD();
+		if ((ev == PROCESS_EVENT_TIMER && data == &et_adv) ||
+				ev == PROCESS_EVENT_POLL){
+			leds_on(LEDS_BLUE);
+			PRINTF("apc_sensor_node_collect_adv_process: sending collector advertise to sink.\n");
+			net_join_as_collector();
+			etimer_reset(&et_adv);
+			leds_off(LEDS_BLUE);
+		}
 	}
 	
 	PROCESS_END();
@@ -547,12 +842,12 @@ PROCESS_THREAD(apc_sensor_node_network_init_process, ev, data)
 	static struct ctimer ct_net_print;
 	static struct ctimer ct_update_addr;
 	static uip_ipaddr_t curPrefix;
-	uip_ipaddr_t collectAddr;
 	rpl_dag_t* dag;
 	PROCESS_EXITHANDLER();
 	PROCESS_BEGIN();
 	PRINTF("APC Sensor Node (Network Initialization) begins...\n");
 	seqNo = 1;
+	PRINTF("UIP_CONF_BUFFER_SIZE: %d\n", UIP_CONF_BUFFER_SIZE);
 	uip_create_unspecified(&prefix);
 	leds_off(LEDS_ALL);
 	leds_on(LEDS_GREEN);
@@ -570,7 +865,7 @@ PROCESS_THREAD(apc_sensor_node_network_init_process, ev, data)
 	}
 	
 	/* set address of this node */
-	set_local_ip_addresses(&prefix, &collectAddr);
+	set_local_ip_addresses(&prefix, &collect_addr);
 	
 	/* set server/sink address */
 	set_remote_ip_addresses(&prefix, &sink_addr);
@@ -626,6 +921,8 @@ PROCESS_THREAD(apc_sensor_node_collect_gather_process, ev, data)
 	//initialization
 	static struct etimer et_collect;
 	uint8_t index;
+	static uint8_t read_calib_sensors_count = 0;
+
 	PROCESS_EXITHANDLER();
 	PROCESS_BEGIN();
 	PRINTF("APC Sensor Node (Collector Gather) begins...\n");
@@ -638,8 +935,22 @@ PROCESS_THREAD(apc_sensor_node_collect_gather_process, ev, data)
 		PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et_collect) );
 		PRINTF("apc_sensor_node_collect_gather_process: starting collection\n");
 		for (index = 0; index < SENSOR_COUNT; index++){
-			read_sensor(SENSOR_TYPES[index], index);
+			read_sensor(SENSOR_TYPES[index]);
 			leds_toggle(LEDS_YELLOW);
+		}
+
+		if (read_calib_sensors_count != SENSOR_CALIB_COUNT){
+			for (index = 0; index < SENSOR_CALIB_COUNT; index++){
+				int sensorType = map_calib_to_sensor_type(SENSOR_CALIB_TYPES[index]);
+				int is_calibrated = is_calibrated_sensor(sensorType);
+
+				if ( !is_calibrated ) {
+
+					if (read_calib_sensor(sensorType) == APC_SENSOR_OPSUCCESS)
+						read_calib_sensors_count++;
+				}
+				leds_toggle(LEDS_YELLOW);
+			}
 		}
 		PRINTF("apc_sensor_node_collect_gather_process: collection finished\n");
 		etimer_reset(&et_collect);
@@ -657,9 +968,10 @@ PROCESS_THREAD(apc_sensor_node_en_sensors_process, ev, data)
 	leds_on(LEDS_YELLOW);
 	//initialize sensor types and configure
 	for (i = 0; i < SENSOR_COUNT; i++) {
-		sensor_readings[i].type = SENSOR_TYPES[i];
-		PRINTF("apc_sensor_node_en_sensors_process: Sensor(0x%01x): %s\n", sensor_readings[i].type,
-		activate_sensor(sensor_readings[i].type) == OPERATION_FAILED ? "ERROR\0" : "OK\0" );
+		sensor_infos[i].sensorType = SENSOR_TYPES[i];
+		sensor_infos[i].isCalibrated = 0;
+		PRINTF("apc_sensor_node_en_sensors_process: Sensor(0x%01x): %s\n", sensor_infos[i].sensorType,
+		activate_sensor(sensor_infos[i].sensorType) == APC_SENSOR_OPFAILURE ? "ERROR\0" : "OK\0" );
 	}
 	print_local_dev_info();
 	leds_off(LEDS_YELLOW);

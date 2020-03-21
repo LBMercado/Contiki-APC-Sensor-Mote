@@ -24,7 +24,7 @@
 #include "sys/stimer.h"
 /* Project Sourcefiles */
 #include "apc-sink-node.h"
-#include "mqtt-handler.h"
+#include "mqtt-sink-handler.h"
 /*---------------------------------------------------------------------------*/
 #define DEBUG DEBUG_PRINT
 #include "net/ip/uip-debug.h"
@@ -101,6 +101,9 @@ summarize_readings_callback(void* arg)
 		PRINTF("O3: %s PPM\n", n->O3);
 		PRINTF("Wind Speed: %s\n", n->windSpeed);
 		PRINTF("Wind Direction: %s\n", n->windDir);
+		PRINTF("CO Ro: %s\n", n->CO_RO);
+		PRINTF("CO2 Ro: %s\n", n->CO2_RO);
+		PRINTF("O3 Ro: %s\n", n->O3_RO);
 	}
 	PRINTF("------------------\n");
 }
@@ -222,6 +225,27 @@ update_sensor_node_reading(const uip_ipaddr_t* nodeAddress, sensor_reading_t* re
 				PRINT6ADDR(nodeAddress);
 				PRINTF(") UPDATED with value: %s\n", n->windDir);
 				break;
+			case CO_RO_T:
+				strcpy(n->CO_RO, reading->data);
+
+				PRINTF("CO_RO_T of sensor node (");
+				PRINT6ADDR(nodeAddress);
+				PRINTF(") UPDATED with value: %s\n", n->CO_RO);
+				break;
+			case CO2_RO_T:
+				strcpy(n->CO2_RO, reading->data);
+
+				PRINTF("CO2_RO_T of sensor node (");
+				PRINT6ADDR(nodeAddress);
+				PRINTF(") UPDATED with value: %s\n", n->CO2_RO);
+				break;
+			case O3_RO_T:
+				strcpy(n->O3_RO, reading->data);
+
+				PRINTF("O3_RO_T of sensor node (");
+				PRINT6ADDR(nodeAddress);
+				PRINTF(") UPDATED with value: %s\n", n->O3_RO);
+				break;
 			default:
 				PRINTF("Failed to update sensor node reading (");
 				PRINT6ADDR(nodeAddress);
@@ -239,12 +263,10 @@ static void
 tcpip_handler(void)
 {
 	node_data_t* node_message;
-	sensor_reading_t sensor_reading;
 
 	if(uip_newdata()) {
+		PRINTF("tcpip_handler: new data\n");
 		node_message = (node_data_t*)uip_appdata;
-		sensor_reading.type = node_message->type;
-		strcpy(sensor_reading.data, node_message->data);
 		
 		PRINTF("apc_sink_node: DATA recv from ");
 		PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
@@ -252,51 +274,55 @@ tcpip_handler(void)
 		PRINTF("Message Type: %hu, Seq. No: 0x%08lx, Size: %hu\n", node_message->type, node_message->seq, sizeof(*node_message));
 		//check actual message type
 		switch(node_message->type){
-		case COLLECTOR_ADV:
-			//add to sensor node list
-			PRINTF("--COLLECTOR_ADV identified from ");
-			PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
-			PRINTF("\n");
-			add_sensor_node(&UIP_IP_BUF->srcipaddr);
-			//store a new copy of the sensor node for mqtt
-			if ( mqtt_store_sensor_data(&UIP_IP_BUF->srcipaddr, NULL) == MQTT_OPFAILURE )
-				PRINTF("Failed to add sensor node to MQTT.\n");
+			case COLLECTOR_ADV:
+				//add to sensor node list
+				PRINTF("--COLLECTOR_ADV identified from ");
+				PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+				PRINTF("\n");
+				add_sensor_node(&UIP_IP_BUF->srcipaddr);
+				//store a new copy of the sensor node for mqtt
+				if ( mqtt_store_sensor_data(&UIP_IP_BUF->srcipaddr, NULL) == MQTT_OPFAILURE )
+					PRINTF("Failed to add sensor node to MQTT.\n");
+
+				node_message->type = COLLECTOR_ACK;
+				node_message->seq = seq_id++;
+				PRINTF("apc_sink_node: sending reply\n");
+				//set dest ip address and send packet
+				uip_ipaddr_copy(&sink_conn->ripaddr, &UIP_IP_BUF->srcipaddr);
+				uip_udp_packet_send(sink_conn, node_message, sizeof(node_data_t));
 			
-			node_message->type = COLLECTOR_ACK;
-			node_message->seq = seq_id++;
-			PRINTF("apc_sink_node: sending reply\n");
-			//set dest ip address and send packet
-			uip_ipaddr_copy(&sink_conn->ripaddr, &UIP_IP_BUF->srcipaddr);
-			uip_udp_packet_send(sink_conn, node_message, sizeof(node_data_t));
-		
-			//reset dest ip address
-			uip_create_unspecified(&sink_conn->ripaddr);
-			PRINTF("apc_sink_node: reply sent to ");
-			PRINT6ADDR(&sink_conn->ripaddr);
-			PRINTF("\n");
-			break;
-		case SENSOR_FAILED:
-			PRINTF("--SENSOR_FAILED identified\n");
-			PRINTF("Sensor node (");
-			PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
-			PRINTF(") reports failure in reading sensors.\n");
-			break;
-		case TEMPERATURE_T:
-		case HUMIDITY_T:
-		case PM25_T:
-		case CO_T:
-		case CO2_T:
-		case O3_T:
-		case WIND_SPEED_T:
-		case WIND_DRCTN_T:
-			PRINTF("--valid sensor data identified\n");
-			update_sensor_node_reading(&UIP_IP_BUF->srcipaddr, &sensor_reading);
-			if ( mqtt_store_sensor_data(&UIP_IP_BUF->srcipaddr, &sensor_reading) == MQTT_OPFAILURE )
-				PRINTF("Failed to add sensor node to MQTT.\n");
-			break;
-		default:
-			PRINTF("--unidentified header detected\n");
-			//unexpected, do nothing
+				//reset dest ip address
+				uip_create_unspecified(&sink_conn->ripaddr);
+				PRINTF("apc_sink_node: reply sent to ");
+				PRINT6ADDR(&sink_conn->ripaddr);
+				PRINTF("\n");
+				break;
+			case SENSOR_FAILED:
+				PRINTF("--SENSOR_FAILED identified\n");
+				PRINTF("Sensor node (");
+				PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+				PRINTF(") reports failure in reading sensors.\n");
+				break;
+			case DATA_ACK:
+				PRINTF("--DATA_ACK identified\n");
+				sensor_data_t sensor_data = node_message->reading;
+
+				for(int i = 0; i < sensor_data.size; i++){
+					PRINTF("Data[%d/%d] type: %hhu, ", i + 1, sensor_data.size,
+							sensor_data.readings[i].type);
+					PRINTF("reading: %s\n", sensor_data.readings[i].data);
+					update_sensor_node_reading(&UIP_IP_BUF->srcipaddr,
+							                   &sensor_data.readings[i]);
+					if ( mqtt_store_sensor_data(&UIP_IP_BUF->srcipaddr,
+							                    &sensor_data.readings[i])
+							== MQTT_OPFAILURE )
+						PRINTF("Failed to add sensor node to MQTT.\n");
+				}
+
+				break;
+			default:
+				PRINTF("--unidentified header detected\n");
+				//unexpected, do nothing
 		}
 	}
 }
@@ -428,7 +454,7 @@ PROCESS_THREAD(apc_sink_node_server_process, ev, data)
 	uip_create_unspecified(&prefix);
 	
 	seq_id = 0;
-	
+	PRINTF("UIP_CONF_BUFFER_SIZE: %d\n", UIP_CONF_BUFFER_SIZE);
 	/* get prefix from DAG */
 	dag = rpl_get_any_dag();
 	if (dag != NULL && !uip_is_addr_unspecified(&dag->prefix_info.prefix) ){

@@ -1,5 +1,5 @@
-#ifndef MQTT_HANDLER_H_
-#define MQTT_HANDLER_H_
+#ifndef MQTT_SINK_HANDLER_H_
+#define MQTT_SINK_HANDLER_H_
 /*---------------------------------------------------------------------------*/
 /* Contiki Core */
 #include "contiki.h"
@@ -17,5 +17,5 @@ mqtt_store_sensor_data
 /*---------------------------------------------------------------------------*/
 PROCESS_NAME(mqtt_handler_process);
 /*---------------------------------------------------------------------------*/
-#endif
+#endif /* IFNDEF MQTT_SINK_HANDLER_H_ */
 /*---------------------------------------------------------------------------*/
