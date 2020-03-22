@@ -57,4 +57,4 @@ From <https://github.com/contiki-os/contiki/issues/2495>
 reference for correct code
 
 For the actual circuit of the sensor node, refer to the diagram below
-<a href="https://drive.google.com/uc?export=view&id=17DQB4p7FXLY97oLzpnmvvPVGVcE1-FQP"><img src="https://drive.google.com/uc?export=view&id=17DQB4p7FXLY97oLzpnmvvPVGVcE1-FQP" style="width: 500px; max-width: 100%; height: auto" title="Click for the larger version."/></a>
+<a href="https://drive.google.com/uc?export=view&id=17DQB4p7FXLY97oLzpnmvvPVGVcE1-FQP"><img src="https://drive.google.com/uc?export=view&id=1xrEYubqM0Cra8B_4ixpzZ14afSn20z8O" style="width: 500px; max-width: 100%; height: auto" title="Click for the larger version."/></a>
