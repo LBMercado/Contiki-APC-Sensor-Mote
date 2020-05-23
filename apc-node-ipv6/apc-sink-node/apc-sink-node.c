@@ -36,6 +36,9 @@
 /*---------------------------------------------------------------------------*/
 #define WEEK_SCALETO_SECOND  604800
 #define UIP_IP_BUF           ( (struct uip_ip_hdr*) & uip_buf[UIP_LLH_LEN] )
+#ifdef APC_SINK_ADDRESS_CONF
+#define APC_SINK_ADDRESS     APC_SINK_ADDRESS_CONF
+#endif
 /*---------------------------------------------------------------------------*/
 static struct uip_udp_conn* sink_conn;
 static uint32_t seq_id;
@@ -365,21 +368,32 @@ set_local_ip_addresses(uip_ipaddr_t* prefix_64, uip_ipaddr_t* sinkAddr)
 	 * uncompressed addresses.
 	 */
 	 
-	#if UIP_CONF_SINK_MODE == UIP_CONF_SINK_64_BIT
+	#if UIP_CONF_SINK_MODE == UIP_CONF_SINK_64_BIT && defined(APC_SINK_ADDRESS)
 	/* Mode 1 - 64 bits inline */
-	if (prefix_64 == NULL || uip_is_addr_unspecified(prefix_64))
-		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0xff00);
-	else
-		uip_ip6addr(sinkAddr, UIP_HTONS(prefix_64->u16[0]), UIP_HTONS(prefix_64->u16[1]), UIP_HTONS(prefix_64->u16[2]), UIP_HTONS(prefix_64->u16[3]), 0, 0, 0, 0xff00);
+	uiplib_ip6addrconv(APC_SINK_ADDRESS, sinkAddr);
+	if (prefix_64 != NULL && !uip_is_addr_unspecified(prefix_64)) {
+		// replace the prefix of the preconfigured address
+		sinkAddr->u16[0] = prefix_64->u16[0];
+		sinkAddr->u16[1] = prefix_64->u16[1];
+		sinkAddr->u16[2] = prefix_64->u16[2];
+		sinkAddr->u16[3] = prefix_64->u16[3];
+	}
 	PRINTF("Sink set as (");
 	PRINT6ADDR(sinkAddr);
 	PRINTF(") 64-bit inline mode \n");
-	#elif UIP_CONF_SINK_MODE == UIP_CONF_SINK_16_BIT
+	#elif UIP_CONF_SINK_MODE == UIP_CONF_SINK_16_BIT && defined(APC_SINK_ADDRESS)
 	/* Mode 2 - 16 bits inline */
-	if (prefix_64 == NULL || uip_is_addr_unspecified(prefix_64))
-		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0x00ff, 0xfe00, 0xff00);
-	else
-		uip_ip6addr(sinkAddr, UIP_HTONS(prefix_64->u16[0]), UIP_HTONS(prefix_64->u16[1]), UIP_HTONS(prefix_64->u16[2]), UIP_HTONS(prefix_64->u16[3]), 0, 0x00ff, 0xfe00, 0xff00);
+	uiplib_ip6addrconv(APC_SINK_ADDRESS, sinkAddr);
+	sinkAddr->u16[4] = 0;
+	sinkAddr->u16[5] = UIP_HTONS(0x00ff);
+	sinkAddr->u16[6] = UIP_HTONS(0xfe00);
+	if (prefix_64 != NULL && !uip_is_addr_unspecified(prefix_64)) {
+		// replace the prefix of the preconfigured address
+		sinkAddr->u16[0] = prefix_64->u16[0];
+		sinkAddr->u16[1] = prefix_64->u16[1];
+		sinkAddr->u16[2] = prefix_64->u16[2];
+		sinkAddr->u16[3] = prefix_64->u16[3];
+	}
 	PRINTF("Sink set as (");
 	PRINT6ADDR(sinkAddr);
 	PRINTF(") 16-bit inline mode \n");

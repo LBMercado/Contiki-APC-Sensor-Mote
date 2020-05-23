@@ -30,6 +30,13 @@
 #define DEBUG DEBUG_PRINT
 #include "net/ip/uip-debug.h"
 /*---------------------------------------------------------------------------*/
+#ifdef APC_SENSOR_ADDRESS_CONF
+#define APC_SENSOR_ADDRESS APC_SENSOR_ADDRESS_CONF
+#endif
+#ifdef APC_SINK_ADDRESS_CONF
+#define APC_SINK_ADDRESS   APC_SINK_ADDRESS_CONF
+#endif
+/*---------------------------------------------------------------------------*/
 #if !NETSTACK_CONF_WITH_IPV6 || !UIP_CONF_ROUTER || !UIP_CONF_IPV6_RPL
 #error "APC-Sink-Node will be unable to function properly with this current contiki configuration."
 #error "Check the values of: NETSTACK_CONF_WITH_IPV6, UIP_CONF_ROUTER, UIP_CONF_IPV6_RPL"
@@ -768,8 +775,8 @@ set_local_ip_addresses(uip_ipaddr_t* prefix_64, uip_ipaddr_t* collectorAddr)
 		uip_ds6_set_addr_iid(collectorAddr, &uip_lladdr);
 		uip_ds6_addr_add(collectorAddr, 0, ADDR_AUTOCONF);
 	} else{
-		//no prefix_64, hardcode the address
-		uip_ip6addr(collectorAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
+		//no prefix available, assign a hardcoded address
+		uiplib_ip6addrconv(APC_SENSOR_ADDRESS, collectorAddr);
 		uip_ds6_set_addr_iid(collectorAddr, &uip_lladdr);
 		uip_ds6_addr_add(collectorAddr, 0, ADDR_AUTOCONF);
 	}
@@ -792,36 +799,37 @@ set_remote_ip_addresses(uip_ipaddr_t* prefix_64, uip_ipaddr_t* sinkAddr)
 	 * uncompressed addresses.
 	 */
 	 
-	#if UIP_CONF_SINK_MODE == UIP_CONF_SINK_64_BIT
+	#if UIP_CONF_SINK_MODE == UIP_CONF_SINK_64_BIT && defined(APC_SINK_ADDRESS)
 	/* Mode 1 - 64 bits inline */
-	if (prefix_64 == NULL || uip_is_addr_unspecified(prefix_64))
-		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0xff00);
-	else
-		uip_ip6addr(sinkAddr, UIP_HTONS(prefix_64->u16[0]), UIP_HTONS(prefix_64->u16[1]), UIP_HTONS(prefix_64->u16[2]), UIP_HTONS(prefix_64->u16[3]), 0, 0, 0, 0xff00);
+	uiplib_ip6addrconv(APC_SINK_ADDRESS, sinkAddr);
+	if (prefix_64 != NULL && !uip_is_addr_unspecified(prefix_64)) {
+		// replace the prefix of the preconfigured address
+		sinkAddr->u16[0] = prefix_64->u16[0];
+		sinkAddr->u16[1] = prefix_64->u16[1];
+		sinkAddr->u16[2] = prefix_64->u16[2];
+		sinkAddr->u16[3] = prefix_64->u16[3];
+	}
 	PRINTF("Sink set as (");
 	PRINT6ADDR(sinkAddr);
 	PRINTF(") 64-bit inline mode \n");
-	#elif UIP_CONF_SINK_MODE == UIP_CONF_SINK_16_BIT
+	#elif UIP_CONF_SINK_MODE == UIP_CONF_SINK_16_BIT && defined(APC_SINK_ADDRESS)
 	/* Mode 2 - 16 bits inline */
-	if (prefix_64 == NULL || uip_is_addr_unspecified(prefix_64))
-		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0x00ff, 0xfe00, 0xff00);
-	else
-		uip_ip6addr(sinkAddr, UIP_HTONS(prefix_64->u16[0]), UIP_HTONS(prefix_64->u16[1]), UIP_HTONS(prefix_64->u16[2]), UIP_HTONS(prefix_64->u16[3]), 0, 0x00ff, 0xfe00, 0xff00);
+	uiplib_ip6addrconv(APC_SINK_ADDRESS, sinkAddr);
+	sinkAddr->u16[4] = 0;
+	sinkAddr->u16[5] = UIP_HTONS(0x00ff);
+	sinkAddr->u16[6] = UIP_HTONS(0xfe00);
+	if (prefix_64 != NULL && !uip_is_addr_unspecified(prefix_64)) {
+		// replace the prefix of the preconfigured address
+		sinkAddr->u16[0] = prefix_64->u16[0];
+		sinkAddr->u16[1] = prefix_64->u16[1];
+		sinkAddr->u16[2] = prefix_64->u16[2];
+		sinkAddr->u16[3] = prefix_64->u16[3];
+	}
 	PRINTF("Sink set as (");
 	PRINT6ADDR(sinkAddr);
 	PRINTF(") 16-bit inline mode \n");
 	#else //UIP_CONF_SINK_MODE == UIP_CONF_SINK_LL_DERIVED
-	/* Mode 3 - derived from link local (MAC) address */
-	/* hardcoded address */
-	if (prefix_64 == NULL || uip_is_addr_unspecified(prefix_64))
-		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0x0212, 0x4b00, 0x1932, 0xe37a);
-	else{ //hardcoded address
-		memcpy(sinkAddr, prefix_64, 16); //copy 64-bit prefix
-		uip_ip6addr(sinkAddr, UIP_HTONS(prefix_64->u16[0]), UIP_HTONS(prefix_64->u16[1]), UIP_HTONS(prefix_64->u16[2]), UIP_HTONS(prefix_64->u16[3]), 0x0212, 0x4b00, 0x1932, 0xe37a);
-	}
-	PRINTF("Sink set as (");
-	PRINT6ADDR(sinkAddr);
-	PRINTF(") ll-derived mode \n");
+	#error "The address for the sink node is not defined."
 	#endif /* UIP_CONF_SINK_MODE */
 	#endif /* UIP_CONF_ROUTER */
 }
