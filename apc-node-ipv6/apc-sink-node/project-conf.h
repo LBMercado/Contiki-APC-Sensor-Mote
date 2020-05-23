@@ -10,6 +10,7 @@
 /*----------------------------------------------------------------*/
 /*------------------------IP-CONFIGURATION------------------------*/
 /*----------------------------------------------------------------*/
+#define APC_SINK_ADDRESS_CONF           "fd00::212:4B00:1932:E37A"
 #define MQTT_CONF_BROKER_IP_ADDR        "fd00::1"
 #define MQTT_CONF_STATUS_LED            LEDS_WHITE
 #define UDP_COLLECT_PORT                2001
@@ -17,7 +18,7 @@
 #define UIP_CONF_SINK_64_BIT            1
 #define UIP_CONF_SINK_16_BIT            2
 #define UIP_CONF_SINK_LL_DERIVED        3
-#define UIP_CONF_SINK_MODE              UIP_CONF_SINK_LL_DERIVED
+#define UIP_CONF_SINK_MODE              UIP_CONF_SINK_64_BIT
 /*----------------------------------------------------------------*/
 /*This code was taken from rpl-collect example found in example/ipv6*/
 /*----------------------------------------------------------------*/
