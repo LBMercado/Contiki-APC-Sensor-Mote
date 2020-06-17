@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <math.h>
 /* Contiki Core and Networking Libraries */
 #include "contiki.h"
 #include "contiki-lib.h"
@@ -24,9 +25,17 @@
 #include "apc-sensor-node.h"
 #include "dev/air-quality-sensor.h"
 #include "dev/anemometer-sensor.h"
+#include "dev/shared-sensors.h"
 /*---------------------------------------------------------------------------*/
 #define DEBUG DEBUG_PRINT
 #include "net/ip/uip-debug.h"
+/*---------------------------------------------------------------------------*/
+#ifdef APC_SENSOR_ADDRESS_CONF
+#define APC_SENSOR_ADDRESS APC_SENSOR_ADDRESS_CONF
+#endif
+#ifdef APC_SINK_ADDRESS_CONF
+#define APC_SINK_ADDRESS   APC_SINK_ADDRESS_CONF
+#endif
 /*---------------------------------------------------------------------------*/
 #if !NETSTACK_CONF_WITH_IPV6 || !UIP_CONF_ROUTER || !UIP_CONF_IPV6_RPL
 #error "APC-Sink-Node will be unable to function properly with this current contiki configuration."
@@ -51,10 +60,46 @@ const uint8_t SENSOR_CALIB_TYPES[SENSOR_CALIB_COUNT] =
 	O3_RO_T //unit in ohms, sf. by 3 digits
 };
 /*----------------------------------------------------------------------------------*/
-/* Collect data from sensors every 3 minutes */
-#define APC_SENSOR_NODE_READ_INTERVAL_SECONDS             15
-#define APC_SENSOR_NODE_COLLECTOR_ADV_INTERVAL_SECONDS    30
+/* Collect data from sensors at spaced intervals*/
+#ifndef APC_SENSOR_NODE_READ_INTERVAL_SECONDS_CONF
+#define APC_SENSOR_NODE_READ_INTERVAL_SECONDS             180
+#else
+#define APC_SENSOR_NODE_READ_INTERVAL_SECONDS             APC_SENSOR_NODE_READ_INTERVAL_SECONDS_CONF
+#endif
+
+/* Minimum for dht22 read intervals, consider slowest sensor */
+#define APC_SENSOR_NODE_READ_WAIT_MILLIS                  CLOCK_SECOND >> 2
+
+/* Amount of time to wait before collector pings sink */
+#ifndef APC_SENSOR_NODE_COLLECTOR_ADV_INTERVAL_SECONDS_CONF
+#define APC_SENSOR_NODE_COLLECTOR_ADV_INTERVAL_SECONDS    45
+#else
+#define APC_SENSOR_NODE_COLLECTOR_ADV_INTERVAL_SECONDS    APC_SENSOR_NODE_COLLECTOR_ADV_INTERVAL_SECONDS_CONF
+#endif
+
+/* Amount of time to wait before sink is considered unreachable or unreliable */
+#ifndef APC_SENSOR_NODE_SINK_DEADTIME_SECONDS_CONF
 #define APC_SENSOR_NODE_SINK_DEADTIME_SECONDS             60
+#else
+#if APC_SENSOR_NODE_SINK_DEADTIME_SECONDS_CONF < APC_SENSOR_NODE_COLLECTOR_ADV_INTERVAL_SECONDS
+#error "Collector dead timer cannot be less than the advertisement time."
+#else
+#define APC_SENSOR_NODE_SINK_DEADTIME_SECONDS             APC_SENSOR_NODE_SINK_DEADTIME_SECONDS_CONF
+#endif
+#endif
+
+#ifndef APC_SENSOR_NODE_AMUX_0BIT_PORT_CONF
+#define APC_SENSOR_NODE_AMUX_0BIT_PORT                    GPIO_D_NUM
+#else
+#define APC_SENSOR_NODE_AMUX_0BIT_PORT                    APC_SENSOR_NODE_AMUX_0BIT_PORT_CONF
+#endif
+
+#ifndef APC_SENSOR_NODE_AMUX_0BIT_PIN_CONF
+#define APC_SENSOR_NODE_AMUX_0BIT_PIN                     1
+#else
+#define APC_SENSOR_NODE_AMUX_0BIT_PIN                     APC_SENSOR_NODE_AMUX_0BIT_PIN_CONF
+#endif
+
 #define UIP_IP_BUF                                        ( (struct uip_ip_hdr*) & uip_buf[UIP_LLH_LEN] )
 /*----------------------------------------------------------------------------------*/
 typedef struct{
@@ -311,7 +356,7 @@ read_calib_sensor
 static int 
 read_sensor
 (uint8_t sensorType) {
-	uint8_t index = -1;
+	static uint8_t index = -1;
 	int value;
 
 	for (int i = 0; i < SENSOR_COUNT; i++){
@@ -496,6 +541,7 @@ read_sensor
 		}
 		break;
 	case WIND_SPEED_T:
+		shared_sensor_select_pin(SHARED_ANEM_SPEED);
 		value = anem_sensor.value(WIND_SPEED_SENSOR);
 		if (value == WIND_SENSOR_ERROR){
 			PRINTF("-----------------\n");
@@ -521,6 +567,7 @@ read_sensor
 		}
 		break;
 	case WIND_DRCTN_T:
+		shared_sensor_select_pin(SHARED_ANEM_DIRECTION);
 		value = anem_sensor.value(WIND_DIR_SENSOR);
 		if (value == WIND_SENSOR_ERROR){
 			PRINTF("-----------------\n");
@@ -728,8 +775,8 @@ set_local_ip_addresses(uip_ipaddr_t* prefix_64, uip_ipaddr_t* collectorAddr)
 		uip_ds6_set_addr_iid(collectorAddr, &uip_lladdr);
 		uip_ds6_addr_add(collectorAddr, 0, ADDR_AUTOCONF);
 	} else{
-		//no prefix_64, hardcode the address
-		uip_ip6addr(collectorAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
+		//no prefix available, assign a hardcoded address
+		uiplib_ip6addrconv(APC_SENSOR_ADDRESS, collectorAddr);
 		uip_ds6_set_addr_iid(collectorAddr, &uip_lladdr);
 		uip_ds6_addr_add(collectorAddr, 0, ADDR_AUTOCONF);
 	}
@@ -752,36 +799,37 @@ set_remote_ip_addresses(uip_ipaddr_t* prefix_64, uip_ipaddr_t* sinkAddr)
 	 * uncompressed addresses.
 	 */
 	 
-	#if UIP_CONF_SINK_MODE == UIP_CONF_SINK_64_BIT
+	#if UIP_CONF_SINK_MODE == UIP_CONF_SINK_64_BIT && defined(APC_SINK_ADDRESS)
 	/* Mode 1 - 64 bits inline */
-	if (prefix_64 == NULL || uip_is_addr_unspecified(prefix_64))
-		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0xff00);
-	else
-		uip_ip6addr(sinkAddr, UIP_HTONS(prefix_64->u16[0]), UIP_HTONS(prefix_64->u16[1]), UIP_HTONS(prefix_64->u16[2]), UIP_HTONS(prefix_64->u16[3]), 0, 0, 0, 0xff00);
+	uiplib_ip6addrconv(APC_SINK_ADDRESS, sinkAddr);
+	if (prefix_64 != NULL && !uip_is_addr_unspecified(prefix_64)) {
+		// replace the prefix of the preconfigured address
+		sinkAddr->u16[0] = prefix_64->u16[0];
+		sinkAddr->u16[1] = prefix_64->u16[1];
+		sinkAddr->u16[2] = prefix_64->u16[2];
+		sinkAddr->u16[3] = prefix_64->u16[3];
+	}
 	PRINTF("Sink set as (");
 	PRINT6ADDR(sinkAddr);
 	PRINTF(") 64-bit inline mode \n");
-	#elif UIP_CONF_SINK_MODE == UIP_CONF_SINK_16_BIT
+	#elif UIP_CONF_SINK_MODE == UIP_CONF_SINK_16_BIT && defined(APC_SINK_ADDRESS)
 	/* Mode 2 - 16 bits inline */
-	if (prefix_64 == NULL || uip_is_addr_unspecified(prefix_64))
-		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0x00ff, 0xfe00, 0xff00);
-	else
-		uip_ip6addr(sinkAddr, UIP_HTONS(prefix_64->u16[0]), UIP_HTONS(prefix_64->u16[1]), UIP_HTONS(prefix_64->u16[2]), UIP_HTONS(prefix_64->u16[3]), 0, 0x00ff, 0xfe00, 0xff00);
+	uiplib_ip6addrconv(APC_SINK_ADDRESS, sinkAddr);
+	sinkAddr->u16[4] = 0;
+	sinkAddr->u16[5] = UIP_HTONS(0x00ff);
+	sinkAddr->u16[6] = UIP_HTONS(0xfe00);
+	if (prefix_64 != NULL && !uip_is_addr_unspecified(prefix_64)) {
+		// replace the prefix of the preconfigured address
+		sinkAddr->u16[0] = prefix_64->u16[0];
+		sinkAddr->u16[1] = prefix_64->u16[1];
+		sinkAddr->u16[2] = prefix_64->u16[2];
+		sinkAddr->u16[3] = prefix_64->u16[3];
+	}
 	PRINTF("Sink set as (");
 	PRINT6ADDR(sinkAddr);
 	PRINTF(") 16-bit inline mode \n");
 	#else //UIP_CONF_SINK_MODE == UIP_CONF_SINK_LL_DERIVED
-	/* Mode 3 - derived from link local (MAC) address */
-	/* hardcoded address */
-	if (prefix_64 == NULL || uip_is_addr_unspecified(prefix_64))
-		uip_ip6addr(sinkAddr, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0x0212, 0x4b00, 0x1932, 0xe37a);
-	else{ //hardcoded address
-		memcpy(sinkAddr, prefix_64, 16); //copy 64-bit prefix
-		uip_ip6addr(sinkAddr, UIP_HTONS(prefix_64->u16[0]), UIP_HTONS(prefix_64->u16[1]), UIP_HTONS(prefix_64->u16[2]), UIP_HTONS(prefix_64->u16[3]), 0x0212, 0x4b00, 0x1932, 0xe37a);
-	}
-	PRINTF("Sink set as (");
-	PRINT6ADDR(sinkAddr);
-	PRINTF(") ll-derived mode \n");
+	#error "The address for the sink node is not defined."
 	#endif /* UIP_CONF_SINK_MODE */
 	#endif /* UIP_CONF_ROUTER */
 }
@@ -920,13 +968,13 @@ PROCESS_THREAD(apc_sensor_node_collect_gather_process, ev, data)
 {
 	//initialization
 	static struct etimer et_collect;
-	uint8_t index;
+	static struct etimer et_read_wait;
+	static uint8_t index = 0;
 	static uint8_t read_calib_sensors_count = 0;
 
 	PROCESS_EXITHANDLER();
 	PROCESS_BEGIN();
 	PRINTF("APC Sensor Node (Collector Gather) begins...\n");
-	
 	etimer_set(&et_collect, CLOCK_SECOND * APC_SENSOR_NODE_READ_INTERVAL_SECONDS);
 	while (1)
 	{
@@ -935,7 +983,10 @@ PROCESS_THREAD(apc_sensor_node_collect_gather_process, ev, data)
 		PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et_collect) );
 		PRINTF("apc_sensor_node_collect_gather_process: starting collection\n");
 		for (index = 0; index < SENSOR_COUNT; index++){
-			read_sensor(SENSOR_TYPES[index]);
+			read_sensor(sensor_infos[index].sensorType);
+
+			etimer_set(&et_read_wait, APC_SENSOR_NODE_READ_WAIT_MILLIS);
+			PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et_read_wait) );
 			leds_toggle(LEDS_YELLOW);
 		}
 
@@ -973,6 +1024,17 @@ PROCESS_THREAD(apc_sensor_node_en_sensors_process, ev, data)
 		PRINTF("apc_sensor_node_en_sensors_process: Sensor(0x%01x): %s\n", sensor_infos[i].sensorType,
 		activate_sensor(sensor_infos[i].sensorType) == APC_SENSOR_OPFAILURE ? "ERROR\0" : "OK\0" );
 	}
+	//configure the analog multiplexer
+	uint8_t select_lines_count = SHARED_SENSOR_MAX_SELECT_LINES;
+	PRINTF("Max select lines configured to be %u\n", SHARED_SENSOR_MAX_SELECT_LINES);
+	shared_sensor_init(select_lines_count);
+	shared_sensor_configure_select_pin(0, APC_SENSOR_NODE_AMUX_0BIT_PIN, APC_SENSOR_NODE_AMUX_0BIT_PORT);
+
+	//share the anemometer and wind vane sensors
+	for (i = 0; i < SHARED_SENSOR_MAX_SHARABLE_SENSORS; i++){
+		shared_sensor_share_pin(&anem_sensor, shared_sensor_type[i]);
+	}
+
 	print_local_dev_info();
 	leds_off(LEDS_YELLOW);
 	process_start(&apc_sensor_node_collect_gather_process, NULL);

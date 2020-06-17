@@ -6,7 +6,11 @@
 #include "net/ip/uip.h"
 /*---------------------------------------------------------*/
 /* This defines the maximum amount of sensor nodes we can remember. */
+#ifndef MAX_SENSOR_NODES_CONF
 #define MAX_SENSOR_NODES            3
+#else
+#define MAX_SENSOR_NODES            MAX_SENSOR_NODES_CONF
+#endif
 /*---------------------------------------------------------*/
 #define LOCAL_ADDR_PRINT_INTERVAL   30
 #define PREFIX_UPDATE_INTERVAL      20
