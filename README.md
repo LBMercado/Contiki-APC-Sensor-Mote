@@ -25,11 +25,12 @@ The following codes written are used to program the motes to read from the senso
 
 **This implementation is valid for only one mote network, if using multiple mote networks, a server is needed and is not covered here.**
 
-## Procedure to make this work
-* Move one of the 'apc-node' folders into the examples folder in Contiki, and follow instructions to compile and run.
-	* make necessary changes to the project.conf file to fit your device's needs
-* Move the files within 'place-in-dev-folder' inside the 'platform/zoul/dev' folder in Contiki
-* Replace also the dht22.c file there with the one here since there is a bug that prevents the original one from working properly, this file fixes that bug. [1]
+# Procedure to make this work
+	* Create an 'apc-node' folder in the Contiki/examples directory.
+		* Move the sink and sensor node folders into this 'apc-node' folder.
+		* make necessary changes to the project.conf file to fit your device's needs
+	* Move the files within 'place-in-dev-folder' inside the 'platform/zoul/dev' folder in Contiki
+	* Replace also the dht22.c file there with the one here since there is a bug that prevents the original one from working properly, this file fixes that bug. [1]
 
 ## Compiling and Uploading Code Using Contiki and Zoul Firefly (general procedure)
 
@@ -41,9 +42,19 @@ The following codes written are used to program the motes to read from the senso
 	5. Enter the command: "make <c-file-name>.upload PORT=<device-port-number>"
 	6. To monitor the output of the device in terminal, enter the command: "make login PORT=<device-port-number>"
 
-Procedure for compiling and running border router to follow.
+## Compiling and Running Border Router
+
+	1. Make a copy or run the RPL Border Router example from the contiki examples. (found at examples/ipv6/rpl-border-router)
+	2. Enter the following command to run the border router. Connect to the appropriate USB port in your computer and make necessary changes to the PORT and IPv6 address.
+	"make border-router.upload PORT=/dev/ttyUSB0 && make connect-router PREFIX="-s /dev/ttyUSB0 fd00::1/64"
+	3. At this point, the RPL border router should be running. You should be able to see the router address in the terminal. You can view the neighbors of the router by pasting its router address in a browser.
 
 You can make use of the mqtt subscriber to make the published data persistent. The subscriber will store the published data locally using MongoDB.
+
+## Other Requirements
+* Mosquitto - for MQTT functionality
+* PyMongo - for storing sensor data persistently
+* Python - to run the mqtt subscriber script
 
 Make sure to update the git repo for contiki to avoid any other issues
 (cd into contiki and pull the latest release using the command "git pull")
@@ -54,7 +65,7 @@ The contiki-ng code for dht22 was working and when i compared their c source cod
 	2. commenting out the assignment statement last_state = GPIO_READ_PIN(DHT22_PORT_BASE, DHT22_PIN_MASK); in dht22_read() function of dht22.c
 
 From <https://github.com/contiki-os/contiki/issues/2495> 
-reference for correct code
+reference for the correct code
 
 For the actual circuit of the sensor node, refer to the diagram below
-<a href="https://drive.google.com/uc?export=view&id=17DQB4p7FXLY97oLzpnmvvPVGVcE1-FQP"><img src="https://drive.google.com/uc?export=view&id=17DQB4p7FXLY97oLzpnmvvPVGVcE1-FQP" style="width: 500px; max-width: 100%; height: auto" title="Click for the larger version."/></a>
+<a href="https://drive.google.com/uc?export=view&id=1KQGYp91lfQ14dhdln3cVewYp078hnnJk"><img src="https://drive.google.com/uc?export=view&id=1KQGYp91lfQ14dhdln3cVewYp078hnnJk" style="width: 500px; max-width: 100%; height: auto" title="Click for the larger version."/></a>
