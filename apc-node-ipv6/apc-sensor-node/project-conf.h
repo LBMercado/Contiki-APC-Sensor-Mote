@@ -37,23 +37,23 @@
 #define PM25_SENSOR_LED_CONF_CTRL_PORT      GPIO_D_NUM
 #define PM25_SENSOR_OUT_CONF_CTRL_PIN       ADC_SENSORS_ADC1_PIN
 
-// MQ7 (CO) -> PA2 (ADC3)
-#define MQ7_SENSOR_CONF_CTRL_PIN        ADC_SENSORS_ADC3_PIN
+// MIC4514 RED (CO)  -> PA2 (ADC3)
+#define MICS4514_SENSOR_RED_CONF_CTRL_PIN      ADC_SENSORS_ADC3_PIN
 // heater -> PC0
-#define MQ7_SENSOR_HEATING_CONF_PIN     0
-#define MQ7_SENSOR_HEATING_CONF_PORT    GPIO_C_NUM
+#define MICS4514_SENSOR_HEATING_CONF_PIN       0
+#define MICS4514_SENSOR_HEATING_CONF_PORT      GPIO_C_NUM
+
+// MIC4514 NOX (NO2) -> PA4 (ADC2)
+#define MICS4514_SENSOR_NOX_CONF_CTRL_PIN      ADC_SENSORS_ADC2_PIN
 
 // MQ131 (O3) -> PA6 (ADC4)
-#define MQ131_SENSOR_CONF_CTRL_PIN      ADC_SENSORS_ADC4_PIN
-
-// MQ135 (NOx/No2/CO2) -> PA4 (ADC2)
-#define MQ135_SENSOR_CONF_CTRL_PIN      ADC_SENSORS_ADC2_PIN
+#define MQ131_SENSOR_CONF_CTRL_PIN             ADC_SENSORS_ADC4_PIN
 
 // Wind Speed Anemometer -> PA7 (ADC5) (Shared)
-#define WIND_SPEED_SENSOR_CONF_CTRL_PIN ADC_SENSORS_ADC5_PIN
+#define WIND_SPEED_SENSOR_CONF_CTRL_PIN        ADC_SENSORS_ADC5_PIN
 
 // Wind Direction Anemometer -> PA7 (ADC5) (Shared)
-#define WIND_DIR_SENSOR_CONF_CTRL_PIN   ADC_SENSORS_ADC5_PIN
+#define WIND_DIR_SENSOR_CONF_CTRL_PIN          ADC_SENSORS_ADC5_PIN
 
 /* Analog Multiplexer
  * PD1 -> (LSB) 0x00I
@@ -69,9 +69,17 @@
 /* reference resistances measured on clean air
  * set to zero to force calibration
 */
-#define MQ7_CONF_RO_CLEAN_AIR           0
 #define MQ131_CONF_RO_CLEAN_AIR         0
-#define MQ135_CONF_RO_CLEAN_AIR         0
+#define MICS4514_NOX_CONF_RO_CLEAN_AIR  0
+#define MICS4514_RED_CONF_RO_CLEAN_AIR  0
+
+/* load resistances for forming the voltage divider in measuring
+ * sensor output
+ */
+#define MQ135_CONF_RL_KOHM              1000
+#define MICS4514_RED_RL_KOHM            47
+#define MICS4514_NOX_RL_KOHM            22
+
 /*----------------------------------------------------------------*/
 /*------------------------IP-CONFIGURATION------------------------*/
 /*----------------------------------------------------------------*/

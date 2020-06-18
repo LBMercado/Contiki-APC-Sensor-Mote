@@ -19,7 +19,6 @@
 #include "lib/list.h"
 #include "lib/memb.h"
 #include "dev/gpio.h"
-#include <math.h>
 #include <stdio.h>
 /* --------------------------------------------- */
 #define DEBUG 0
@@ -61,7 +60,12 @@ void shared_sensor_init(uint8_t select_count){
 
 	memb_init(&shared_sensors_memb);
 	list_init(shared_sensors_list);
-	sharable_sensor_count = (int)(powf(2, select_pin_count));
+
+	sharable_sensor_count = 2;
+	if (select_pin_count > 1)
+		for (int i = 0; i < select_pin_count - 1; i++) {
+			sharable_sensor_count *= 2;
+		}
 
 	PRINTF("Sharable Sensor Count: %u\n", sharable_sensor_count);
 	for (int i = 0; i < sharable_sensor_count; i++) {

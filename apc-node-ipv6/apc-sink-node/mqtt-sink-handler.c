@@ -91,7 +91,7 @@ static uint8_t state;
 #define RSSI_MEASURE_INTERVAL_MAX 86400 /* secs: 1 day */
 #define RSSI_MEASURE_INTERVAL_MIN     5 /* secs */
 #define PUBLISH_INTERVAL_MAX      86400 /* secs: 1 day */
-#define PUBLISH_INTERVAL_MIN         15 /* secs */
+#define PUBLISH_INTERVAL_MIN         60 /* secs */
 /*---------------------------------------------------------------------------*/
 /* A timeout used when waiting to connect to a network */
 #define NET_CONNECT_PERIODIC        (CLOCK_SECOND >> 2)
@@ -104,7 +104,7 @@ static uint8_t state;
 #define DEFAULT_SUBSCRIBE_CMD_TYPE  "+"
 #define DEFAULT_BROKER_PORT         1883
 #define DEFAULT_PUBLISH_INTERVAL    (30 * CLOCK_SECOND)
-#define DEFAULT_KEEP_ALIVE_TIMER    60
+#define DEFAULT_KEEP_ALIVE_TIMER    75
 #define DEFAULT_RSSI_MEAS_INTERVAL  (CLOCK_SECOND * 30)
 /*---------------------------------------------------------------------------*/
 /* Payload length of ICMPv6 echo requests used to measure RSSI with def rt */
@@ -434,12 +434,12 @@ update_mqtt_sensor_data
 		PRINT6ADDR(&node->addr);
 		PRINTF(") UPDATED with value: %s\n", node->CO);
 		break;
-	case CO2_T:
-		strcpy(node->CO2, newData->data);
+	case NO2_T:
+		strcpy(node->NO2, newData->data);
 		
-		PRINTF("MQTT - CO2_T of sensor node (");
+		PRINTF("MQTT - NO2_T of sensor node (");
 		PRINT6ADDR(&node->addr);
-		PRINTF(") UPDATED with value: %s\n", node->CO2);
+		PRINTF(") UPDATED with value: %s\n", node->NO2);
 		break;
 	case O3_T:
 		strcpy(node->O3, newData->data);
@@ -469,12 +469,12 @@ update_mqtt_sensor_data
 		PRINT6ADDR(&node->addr);
 		PRINTF(") UPDATED with value: %s\n", node->CO_RO);
 		break;
-	case CO2_RO_T:
-		strcpy(node->CO2_RO, newData->data);
+	case NO2_RO_T:
+		strcpy(node->NO2_RO, newData->data);
 
-		PRINTF("MQTT - CO2_RO_T of sensor node (");
+		PRINTF("MQTT - NO2_RO_T of sensor node (");
 		PRINT6ADDR(&node->addr);
-		PRINTF(") UPDATED with value: %s\n", node->CO2_RO);
+		PRINTF(") UPDATED with value: %s\n", node->NO2_RO);
 		break;
 	case O3_RO_T:
 		strcpy(node->O3_RO, newData->data);
@@ -543,101 +543,98 @@ pub_sensor_data
 				continue;
 			//Enclose and specify which node
 			char node_addr[64];
-			remaining -= len;
-			buf_ptr += len;
 			ipaddr_sprintf(node_addr, sizeof(node_addr), &n->addr);
-			len = snprintf(buf_ptr, remaining, ",\"collector\":{\"address\":\"%s\"",
-			node_addr);
+			len = snprintf(buf_ptr, remaining, ",\"collector%d\":{\"address\":\"%s\"",
+			i + 1, node_addr);
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
 				return;
 			}
-			//Temperature
 			remaining -= len;
 			buf_ptr += len;
+			//Temperature
 			len = snprintf(buf_ptr, remaining, ",\"Temperature (°C)\":%s",
 			strcmp(n->temperature,"") ? n->temperature : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
 				return;
 			}
-			//Humidity
 			remaining -= len;
 			buf_ptr += len;
-			len = snprintf(buf_ptr, remaining, ",\"Humidity (°C)\":%s",
+			//Humidity
+			len = snprintf(buf_ptr, remaining, ",\"Humidity (%RH)\":%s",
 			strcmp(n->humidity,"") ? n->humidity : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
 				return;
 			}
-			//PM25
 			remaining -= len;
 			buf_ptr += len;
+			//PM25
 			len = snprintf(buf_ptr, remaining, ",\"PM25 (ug/m3)\":%s",
 			strcmp(n->PM25,"") ? n->PM25 : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
 				return;
 			}
-			//CO2
 			remaining -= len;
 			buf_ptr += len;
-			len = snprintf(buf_ptr, remaining, ",\"CO2 (ppm)\":%s",
-			strcmp(n->CO2,"") ? n->CO2 : "-1");
+			//NO2
+			len = snprintf(buf_ptr, remaining, ",\"NO2 (Rs/Ro)\":%s",
+			strcmp(n->NO2,"") ? n->NO2 : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
 				return;
 			}
-			//CO
 			remaining -= len;
 			buf_ptr += len;
-			len = snprintf(buf_ptr, remaining, ",\"CO (ppm)\":%s",
+			//CO
+			len = snprintf(buf_ptr, remaining, ",\"CO (Rs/Ro)\":%s",
 			strcmp(n->CO,"") ? n->CO : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
 				return;
 			}
-			//O3
 			remaining -= len;
 			buf_ptr += len;
-			len = snprintf(buf_ptr, remaining, ",\"O3 (ppm)\":%s",
+			//O3
+			len = snprintf(buf_ptr, remaining, ",\"O3 (Rs/Ro)\":%s",
 			strcmp(n->O3,"") ? n->O3 : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
 				return;
 			}
-			//Wind Speed
 			remaining -= len;
 			buf_ptr += len;
+			//Wind Speed
 			len = snprintf(buf_ptr, remaining, ",\"Wind Speed (m/s)\":%s",
 			strcmp(n->windSpeed,"") ? n->windSpeed : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
 				return;
 			}
-			//Wind Direction
 			remaining -= len;
 			buf_ptr += len;
+			//Wind Direction
 			len = snprintf(buf_ptr, remaining, ",\"Wind Direction\":\"%s\"",
 			n->windDir);
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
 				return;
 			}
-			
-			//Initial calibration values list
 			remaining -= len;
 			buf_ptr += len;
+			//Initial calibration values list
 			len = snprintf(buf_ptr, remaining, ",\"calibration\":[");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
 				return;
 			}
-
-			//CO calibration value
 			remaining -= len;
 			buf_ptr += len;
-			len = snprintf(buf_ptr, remaining, "\"CO Rs (Ohms)\":%s,",
+
+			//CO calibration value
+			len = snprintf(buf_ptr, remaining, "{\"CO Rs (Ohms)\":%s},",
 					strcmp(n->CO_RO,"") ? n->CO_RO : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
@@ -646,9 +643,9 @@ pub_sensor_data
 			remaining -= len;
 			buf_ptr += len;
 
-			//CO2 calibration value
-			len = snprintf(buf_ptr, remaining, "\"CO2 Rs (Ohms)\":%s,",
-					strcmp(n->CO2_RO, "") ? n->CO2_RO : "-1");
+			//NO2 calibration value
+			len = snprintf(buf_ptr, remaining, "{\"NO2 Rs (Ohms)\":%s},",
+					strcmp(n->NO2_RO, "") ? n->NO2_RO : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
 				return;
@@ -657,7 +654,7 @@ pub_sensor_data
 			buf_ptr += len;
 
 			//O3 calibration value
-			len = snprintf(buf_ptr, remaining, "\"O3 Rs (Ohms)\":%s",
+			len = snprintf(buf_ptr, remaining, "{\"O3 Rs (Ohms)\":%s}",
 					strcmp(n->O3_RO, "") ? n->O3_RO : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
@@ -743,16 +740,19 @@ publish(void)
 		printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
 		return;
 	}
+	remaining -= len;
+	buf_ptr += len;
 	
 	pub_sensor_data(len, remaining);
 	
-	remaining -= len;
-	buf_ptr += len;
 	len = snprintf(buf_ptr, remaining, "}");
 	if(len < 0 || len >= remaining) {
 		printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
 		return;
 	}
+	remaining -= len;
+	buf_ptr += len;
+
 	mqtt_publish(&conn, NULL, pub_topic, (uint8_t *)app_buffer,
 	strlen(app_buffer), MQTT_QOS_LEVEL_0, MQTT_RETAIN_OFF);
 	DBG("APP - Publish!\n");

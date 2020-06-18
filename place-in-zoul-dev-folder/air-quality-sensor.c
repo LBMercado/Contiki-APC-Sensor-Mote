@@ -4,27 +4,29 @@
 #include "dev/zoul-sensors.h"
 #include "dev/adc-sensors.h"
 #include <stdio.h>
-#include <math.h>
 /*------------------------------------------------------------------*/
-#define MQ7_SENSOR_PIN_MASK             GPIO_PIN_MASK(MQ7_SENSOR_CTRL_PIN)
-#define MQ131_SENSOR_PIN_MASK           GPIO_PIN_MASK(MQ131_SENSOR_CTRL_PIN)
-#define MQ135_SENSOR_PIN_MASK           GPIO_PIN_MASK(MQ135_SENSOR_CTRL_PIN)
-#define MQ7_SENSOR_HEATING_PIN_MASK     GPIO_PIN_MASK(MQ7_SENSOR_HEATING_PIN)
-#define MQ7_SENSOR_HEATING_PORT_BASE    GPIO_PORT_TO_BASE(MQ7_SENSOR_HEATING_PORT)
+#define MQ7_SENSOR_PIN_MASK                      GPIO_PIN_MASK(MQ7_SENSOR_CTRL_PIN)
+#define MQ131_SENSOR_PIN_MASK                    GPIO_PIN_MASK(MQ131_SENSOR_CTRL_PIN)
+#define MQ135_SENSOR_PIN_MASK                    GPIO_PIN_MASK(MQ135_SENSOR_CTRL_PIN)
+#define MQ7_SENSOR_HEATING_PIN_MASK              GPIO_PIN_MASK(MQ7_SENSOR_HEATING_PIN)
+#define MQ7_SENSOR_HEATING_PORT_BASE             GPIO_PORT_TO_BASE(MQ7_SENSOR_HEATING_PORT)
+#define MICS4514_SENSOR_RED_PIN_MASK             GPIO_PIN_MASK(MICS4514_SENSOR_RED_CTRL_PIN)
+#define MICS4514_SENSOR_NOX_PIN_MASK             GPIO_PIN_MASK(MICS4514_SENSOR_NOX_CTRL_PIN)
+#define MICS4514_SENSOR_HEATING_PIN_MASK         GPIO_PIN_MASK(MICS4514_SENSOR_HEATING_PIN)
+#define MICS4514_SENSOR_HEATING_PORT_BASE        GPIO_PORT_TO_BASE(MICS4514_SENSOR_HEATING_PORT)
 /*------------------------------------------------------------------*/
 //values for calibration
 #define CALIBRATION_SAMPLE_COUNT 100 //number of samples before finalizing calibration values
+/*------------------------------------------------------------------*/
+//tolerance in 3 decimal digit precision
+#define RESRATIO_TOLERANCE       1
 /*------------------------------------------------------------------*/
 /*Scaling Factors*/
 //scaling factors for resistances
 #define OHM_SCALETO_MILLIOHM     1000
 #define KOHM_SCALETO_MILLIOHM    1000000
-//scaling factors for PPM/PPB
-#define PPM_SCALETO_PPB          0.001
-#define PPB_SCALETO_PPM          1000
 /*------------------------------------------------------------------*/
-//tolerance values
-#define RESRATIO_TOLERANCE       0.005
+#define AQS_SUPPORTED_SENSOR_COUNT  5
 /*------------------------------------------------------------------*/
 #define AQS_ADC_REF       50000  // in mV, sf. 1 dec. digit
 #define AQS_ADC_CROSSREF  33000  // in mV, sf. 1 dec. digit
@@ -39,9 +41,11 @@
 PROCESS(aqs_mq7_calibration_process,"AQS Calibration (MQ7) Process Handler");
 PROCESS(aqs_mq131_calibration_process,"AQS Calibration (MQ131) Process Handler");
 PROCESS(aqs_mq135_calibration_process,"AQS Calibration (MQ135) Process Handler");
+PROCESS(aqs_mics4514_calibration_process, "AQS Calibration (MICS-4514) Process Handler");
 PROCESS(aqs_mq7_measurement_process, "AQS Measurement (MQ7) Process Handler");
 PROCESS(aqs_mq131_measurement_process, "AQS Measurement (MQ131) Process Handler");
 PROCESS(aqs_mq135_measurement_process, "AQS Measurement (MQ135) Process Handler");
+PROCESS(aqs_mics4514_measurement_process, "AQS Measurement (MICS-4514) Process Handler");
 /*------------------------------------------------------------------*/
 static process_event_t calibration_finished_event;
 /*------------------------------------------------------------------*/
@@ -51,11 +55,11 @@ typedef struct{
 } measure_aqs_data_t;
 typedef struct {
   uint8_t state; //sensor status
-  uint16_t value; //resratio equivalent of sensor output
+  uint32_t value; //resratio equivalent of sensor output, precision in 3 decimal digits
   uint32_t ro; //(in milliohms), sensor resistance in clean air
 } aqs_info_t;
-static aqs_info_t aqs_info[3];
-static uint8_t event_allocated;
+static aqs_info_t aqs_info[AQS_SUPPORTED_SENSOR_COUNT];
+static uint8_t event_allocated = 0;
 /*------------------------------------------------------------------*/
 static void
 allocate_calibrate_event()
@@ -67,225 +71,66 @@ allocate_calibrate_event()
 		event_allocated = 1;
 	}
 }
-/* Converts raw ADC value in millivolts to its PPM value value based on the sensor type.
-@param: type = sensor identifier (MQ7_SENSOR,MQ131_SENSOR,MQ135_SENSOR)
-@param: value = ADC value to translate
-@returns: unsigned int (32 bits long) PPM in fixed point (significant to the 3rd decimal digit)
+/*------------------------------------------------------------------*/
+/*
+*  Converts raw ADC value in millivolts to its corresponding Ro (sensor resistance) resistance based on the sensor type.
+*   @param: type = sensor identifier (MQ7_SENSOR,MQ131_SENSOR,MQ135_SENSOR)
+*   @param: value = actual voltage at the load resistor s.f. by 1 decimal digit in fixed-point
+*   @returns: unsigned int (32 bits long) Ro in milliohms
+*   Note: Computations are s.f. by 1 decimal digit, and are normalized back again to integer-precision
 */
 static uint32_t
-ConvertRawValToPPM(const uint8_t type, uint32_t value)
-{
-	float val; //will be Rs/Ro in datasheet
-	/* rs = sensor resistance in various conditions*/
-	uint32_t rs; //(in milliohms)
-	val = (float)value / 10; // sf. 1 decimal digit
-	
+convert_raw_to_sensor_res(const uint8_t type, uint32_t value)
+{	
 	switch (type)
 	{
 	case MQ7_SENSOR:
 		/* Refer to datasheet
+		*
 		*	RS = ( (Vc – VRL) / VRL ) * RL
 		*	Where:
-		*		Vc = source voltage at time of measurement (5V or 1.4V)
-		*		VRL = reference resistor voltage, output of A0 Pin
-		*		
-		*		*RL = reference resistor
-		*		
-		*		*assumed to be valued around ~5 - ~20 Ω
-		*/
-		if (aqs_info[MQ7_SENSOR].ro == 0) {
-			PRINTF("ERROR: @AQS:ConvertRawValToPPM(MQ7) - Ro is not calibrated.\n");
-			return 0;
-		}
-		rs = ( ( 5000 - val ) / (float)val ) * (MQ7_RL_KOHM * KOHM_SCALETO_MILLIOHM);
-		val = (float)rs / (float)aqs_info[MQ7_SENSOR].ro;
-		
-		//make sure valid is within range of sensor specs else set to min/max and warn user
-		if (val + RESRATIO_TOLERANCE <= MQ7_RESRATIO_MIN) {
-			PRINTF("WARNING: @AQS:ConvertRawValToPPM(MQ7) - \'val\' is out of bounds. Minimum value set.\n");
-			PRINTF("Computed value: %u.%03u\n", (uint16_t)val, (uint16_t)( (val - (uint16_t)val) * 1000) );
-			val = MQ7_RESRATIO_MIN;
-		} else if (val - RESRATIO_TOLERANCE >= MQ7_RESRATIO_MAX){
-			PRINTF("WARNING: @AQS:ConvertRawValToPPM(MQ7) - \'val\' is out of bounds. Maximum value set.\n");
-			PRINTF("Computed value: %u.%03u\n", (uint16_t)val, (uint16_t)( (val - (uint16_t)val) * 1000) );
-			val = MQ7_RESRATIO_MAX;
-		}
-		
-		//convert Rs/Ro ratio to PPM
-		//compare from the top since the boundaries are in descending order
-		//check if it falls within third boundary
-		if (val - RESRATIO_TOLERANCE <= MQ7_RESRATIO_BOUNDARY_3){
-			val = ( MQ7_PPM_BOUNDARY_3 ) *
-			powf( ( val / MQ7_RESRATIO_BOUNDARY_2 ) ,
-			logf( MQ7_PPM_BOUNDARY_4 / MQ7_PPM_BOUNDARY_3 ) / logf( MQ7_RESRATIO_BOUNDARY_4 / MQ7_RESRATIO_BOUNDARY_3 ) );
-		}
-		//check if it falls within second boundary
-		else if (val - RESRATIO_TOLERANCE <= MQ7_RESRATIO_BOUNDARY_2){
-			val = ( MQ7_PPM_BOUNDARY_2 ) *
-			powf( ( val / MQ7_RESRATIO_BOUNDARY_1 ) ,
-			logf( MQ7_PPM_BOUNDARY_3 / MQ7_PPM_BOUNDARY_2 ) / logf( MQ7_RESRATIO_BOUNDARY_3 / MQ7_RESRATIO_BOUNDARY_2 ) );
-		}
-		//check if it falls within first boundary
-		else if (val - RESRATIO_TOLERANCE <= MQ7_RESRATIO_BOUNDARY_1){
-			val = ( MQ7_PPM_BOUNDARY_1 ) *
-			powf( ( val / MQ7_RESRATIO_BOUNDARY_1 ) ,
-			logf( MQ7_PPM_BOUNDARY_2 / MQ7_PPM_BOUNDARY_1 ) / logf( MQ7_RESRATIO_BOUNDARY_2 / MQ7_RESRATIO_BOUNDARY_1 ) );
-		}
-		else {
-			printf("Error for AQS: ConvertRawValToPPM(MQ7) function - unhandled value. \n");
-			val = 0;
-		}
-		return (uint32_t)(val * 1000); //preserve decimal part by 3 digits
-		break;
-	case MQ131_SENSOR:
-		/* Refer to datasheet
-		*	RS = ( Vc / VRL - 1 ) × RL
-		*			Where:
-		*				Vc = source voltage at time of measurement (5V)
-		*				VRL = reference resistor voltage, output of A0 Pin
-		*				*RL = reference resistor
-		*				
-		*				*assumed to be valued around ~5 - ~20 Ω
-		*/
-		if (aqs_info[MQ131_SENSOR].ro == 0) {
-			PRINTF("ERROR: @AQS:ConvertRawValToPPM(MQ131) - Ro is not calibrated.\n");
-			return 0;
-		}
-		rs = ( ( 5000 / (float)val ) - 1 ) * ( MQ131_RL_KOHM * KOHM_SCALETO_MILLIOHM );
-		val = (float)rs / (float)aqs_info[MQ131_SENSOR].ro;
-		//make sure valid is within range of sensor specs else set to min/max and warn user
-		if (val - RESRATIO_TOLERANCE <= MQ7_RESRATIO_MIN) {
-			PRINTF("WARNING: @AQS:ConvertRawValToPPM(MQ131) - \'val\' is out of bounds. Minimum value set.\n");
-			PRINTF("Computed value: %u.%03u\n", (uint16_t)val, (uint16_t)( (val - (uint16_t)val) * 1000) );
-			val = MQ131_RESRATIO_MIN;
-		} else if (val - RESRATIO_TOLERANCE >= MQ7_RESRATIO_MAX){
-			PRINTF("WARNING: @AQS:ConvertRawValToPPM(MQ131) - \'val\' is out of bounds. Maximum value set.\n");
-			PRINTF("Computed value: %u.%03u\n", (uint16_t)val, (uint16_t)( (val - (uint16_t)val) * 1000) );
-			val = MQ131_RESRATIO_MAX;
-		}
-		
-		//convert Rs/Ro ratio to PPM
-		//compare from the top since the boundaries are in descending order
-		//check if it falls within fourth boundary
-		if (val - RESRATIO_TOLERANCE <= MQ131_RESRATIO_BOUNDARY_4){
-			val = ( MQ131_PPM_BOUNDARY_4 ) *
-			powf( ( val / MQ131_RESRATIO_BOUNDARY_4 ) ,
-			logf( MQ131_PPM_BOUNDARY_5 / MQ131_PPM_BOUNDARY_4 ) / logf( MQ131_RESRATIO_BOUNDARY_5 / MQ131_RESRATIO_BOUNDARY_4 ) );
-		}
-		//check if it falls within third boundary
-		else if (val - RESRATIO_TOLERANCE <= MQ131_RESRATIO_BOUNDARY_3){
-			val = ( MQ131_PPM_BOUNDARY_3 ) *
-			powf( ( val / MQ131_RESRATIO_BOUNDARY_3 ) ,
-			logf( MQ131_PPM_BOUNDARY_4 / MQ131_PPM_BOUNDARY_3 ) / logf( MQ131_RESRATIO_BOUNDARY_4 / MQ131_RESRATIO_BOUNDARY_3 ) );
-		}
-		//check if it falls within second boundary
-		else if (val - RESRATIO_TOLERANCE <= MQ131_RESRATIO_BOUNDARY_2){
-			val = ( MQ131_PPM_BOUNDARY_2 ) *
-			powf( ( val / MQ131_RESRATIO_BOUNDARY_2 ) ,
-			logf( MQ131_PPM_BOUNDARY_3 / MQ131_PPM_BOUNDARY_2 ) / logf( MQ131_RESRATIO_BOUNDARY_3 / MQ131_RESRATIO_BOUNDARY_2 ) );
-		}
-		//check if it falls within first boundary
-		else if (val - RESRATIO_TOLERANCE <= MQ131_RESRATIO_BOUNDARY_1){
-			val = ( MQ131_PPM_BOUNDARY_1 ) *
-			powf( ( val / MQ131_RESRATIO_BOUNDARY_1 ) ,
-			logf( MQ131_PPM_BOUNDARY_2 / MQ131_PPM_BOUNDARY_1 ) / logf( MQ131_RESRATIO_BOUNDARY_2 / MQ131_RESRATIO_BOUNDARY_1 ) );
-		}
-		else {
-			printf("Error for AQS: ConvertRawValToPPM(MQ131) function - unhandled value. \n");
-			val = 0;
-		}
-
-		return (uint32_t)(val * 1000); //preserve decimal part by 3 digits
-		break;
-	case MQ135_SENSOR:
-		/* Refer to datasheet
-		*	RS = ( Vc / VRL - 1 ) × RL
-		*		Where:
-		*			Vc = source voltage at time of measurement (5V)
-		*			VRL = reference resistor voltage, output of A0 Pin
-		*			*RL = reference resistor
-		*			
-		*			*assumed to be valued around ~5 - ~20 Ω
-		*/
-		if (aqs_info[MQ135_SENSOR].ro == 0) {
-			PRINTF("ERROR: @AQS:ConvertRawValToPPM(MQ135) - Ro is not calibrated.\n");
-			return 0;
-		}
-		rs = ( ( 5000 / (float)val ) - 1 ) * ( MQ135_RL_KOHM * KOHM_SCALETO_MILLIOHM );
-		val = (float)rs / (float)aqs_info[MQ135_SENSOR].ro;
-		//make sure valid is within range of sensor specs else set to min/max and warn user
-		if (val - RESRATIO_TOLERANCE <= MQ135_RESRATIO_MIN) {
-			PRINTF("WARNING: @AQS:ConvertRawValToPPM(MQ135) - \'val\' is out of bounds. Minimum value set.\n");
-			PRINTF("Computed value: %u.%03u\n", (uint16_t)val, (uint16_t)( (val - (uint16_t)val) * 1000) );
-			val = MQ135_RESRATIO_MIN;
-		} else if (val - RESRATIO_TOLERANCE >= MQ135_RESRATIO_MAX){
-			PRINTF("WARNING: @AQS:ConvertRawValToPPM(MQ135) - \'val\' is out of bounds. Maximum value set.\n");
-			PRINTF("Computed value: %u.%03u\n", (uint16_t)val, (uint16_t)( (val - (uint16_t)val) * 1000) );
-			val = MQ135_RESRATIO_MAX;
-		}
-		
-		//convert Rs/Ro ratio to PPM
-		//compare from the top since the boundaries are in descending order
-		//check if it falls within second boundary
-		if (val - RESRATIO_TOLERANCE <= MQ135_RESRATIO_BOUNDARY_2){
-			val = ( MQ135_PPM_BOUNDARY_2 ) *
-			powf( ( val / MQ135_RESRATIO_BOUNDARY_2 ) ,
-			logf( MQ135_PPM_BOUNDARY_3 / MQ135_PPM_BOUNDARY_2 ) / logf( MQ135_RESRATIO_BOUNDARY_3 / MQ135_RESRATIO_BOUNDARY_2 ) );
-		}
-		//check if it falls within first boundary
-		else if (val - RESRATIO_TOLERANCE <= MQ135_RESRATIO_BOUNDARY_1){
-			val = ( MQ135_PPM_BOUNDARY_1 ) *
-			powf( ( val / MQ135_RESRATIO_BOUNDARY_1 ) ,
-			logf( MQ135_PPM_BOUNDARY_2 / MQ135_PPM_BOUNDARY_1 ) / logf( MQ135_RESRATIO_BOUNDARY_2 / MQ135_RESRATIO_BOUNDARY_1 ) );
-		}
-		else {
-			PRINTF("Error for AQS: ConvertRawValToPPM(MQ135) function - unhandled value.\n");
-			val = 0;
-		}
-
-		return (uint32_t)(val * 1000); //preserve decimal part by 3 digits
-		break;
-	default:
-		PRINTF("Error for AQS: ConvertRawValToPPM function parameter \'type\' is not valid.\n");
-		return 0;
-	}
-}
-/*------------------------------------------------------------------*/
-/* (this function is used during calibration procedures)
-*  Converts raw ADC value in millivolts to its corresponding Ro (sensor resistance) resistance based on the sensor type.
-*   @param: type = sensor identifier (MQ7_SENSOR,MQ131_SENSOR,MQ135_SENSOR)
-*   @param: value = ADC value to translate
-*   @returns: unsigned int (32 bits long) Ro in milliohms
-*/
-static uint32_t
-ConvertRawValToSensorRes(const uint8_t type, uint32_t value)
-{	
-	switch (type)
-	{
-	case MQ7_SENSOR:	
-		/* Refer to datasheet
-		*	RS = ( (Vc – VRL) / VRL ) * RL
-		*	Where:
-		*		Vc = source voltage at time of measurement (5V or 1.4V)
+		*		Vc = source voltage at time of measurement (5000mV or 1400mV, assume 5000mV)
 		*		VRL = reference resistor voltage, output of A0 Pin
 		*		*RL = reference resistor
-		*		
-		*		*assumed to be valued around ~5 - ~20 Ω
+		*
 		*/
-		// consider the precision of the raw value (sf. 1st decimal digit)
-		value = ( ( 5000 - (float)value / 10 ) / ( (float)value / 10 ) ) * (MQ7_RL_KOHM * KOHM_SCALETO_MILLIOHM);
+		value = ( ( 50000 - (float)value ) / ( (float)value ) ) * (MQ7_RL_KOHM * KOHM_SCALETO_MILLIOHM);
 		return value;
+	case MICS4514_SENSOR_NOX:
+		/* Sensor forms a voltage divider with load resistor RL (MICS4514)
+		*
+		*	RS = ( (Vc – VRL) / VRL ) * RL
+		*	Where:
+		*		Vc = source voltage at time of measurement (5000mV)
+		*		VRL = reference resistor voltage, output of A0 Pin
+		*		*RL = reference resistor
+		*
+		*/
+		value = ( ( 50000 - (float)value ) / ( (float)value ) ) * (MICS4514_NOX_RL_KOHM * KOHM_SCALETO_MILLIOHM);
+		return value;
+		break;
+	case MICS4514_SENSOR_RED:
+		/* Sensor forms a voltage divider with load resistor RL (MICS4514)
+		*
+		*	RS = ( (Vc – VRL) / VRL ) * RL
+		*	Where:
+		*		Vc = source voltage at time of measurement (5000mV)
+		*		VRL = reference resistor voltage, output of A0 Pin
+		*		*RL = reference resistor
+		*
+		*/
+		value = ( ( 50000 - (float)value ) / ( (float)value ) ) * (MICS4514_RED_RL_KOHM * KOHM_SCALETO_MILLIOHM);
+		return value;
+		break;
 	case MQ131_SENSOR:
 		/* Refer to datasheet
 		*	RS = ( Vc / VRL - 1 ) × RL
 		*	Where:
-		*		Vc = source voltage at time of measurement (5V)
+		*		Vc = source voltage at time of measurement (5000mV)
 		*		VRL = reference resistor voltage, output of A0 Pin
 		*		*RL = reference resistor
-		*		
-		*		*assumed to be valued around ~5 - ~20 Ω
+		*
 		*/
-		// consider the precision of the raw value (sf. 1st decimal digit)
 		value = ( ( 5000 / (float)value / 10 ) - 1 ) * ( MQ131_RL_KOHM * KOHM_SCALETO_MILLIOHM);
 		return value;
 		break;
@@ -293,19 +138,63 @@ ConvertRawValToSensorRes(const uint8_t type, uint32_t value)
 		/* Refer to datasheet
 		*	RS = ( Vc / VRL - 1 ) × RL
 		*	Where:
-		*		Vc = source voltage at time of measurement (5V)
+		*		Vc = source voltage at time of measurement (5000mV)
 		*		VRL = reference resistor voltage, output of A0 Pin
 		*		*RL = reference resistor
-		*		
-		*		*assumed to be valued around ~5 - ~20 Ω
+		*
 		*/
-		// consider the precision of the raw value (sf. 1st decimal digit)
 		value = ( ( 5000 / (float)value / 10 ) - 1 ) * ( MQ135_RL_KOHM * KOHM_SCALETO_MILLIOHM );
 		return value;
 		break;
 	default:
 		PRINTF("Error for AQS: ConvertRawValToPPM function parameter \'type\' is not valid.\n");
 		return 0;
+	}
+}
+/*------------------------------------------------------------------*/
+static uint32_t
+normalize_resratio(const uint32_t resratio, const uint8_t type){
+	uint32_t val = 0;
+
+	switch(type){
+		case MQ7_SENSOR:
+			if (resratio + RESRATIO_TOLERANCE > MQ7_RESRATIO_MAX)
+				val = MQ7_RESRATIO_MAX;
+			else if (resratio - RESRATIO_TOLERANCE < MQ7_RESRATIO_MIN)
+				val = MQ7_RESRATIO_MIN;
+			return val;
+			break;
+		case MQ131_SENSOR:
+			if (resratio + RESRATIO_TOLERANCE > MQ131_RESRATIO_MAX)
+				val = MQ131_RESRATIO_MAX;
+			else if (resratio - RESRATIO_TOLERANCE < MQ131_RESRATIO_MIN)
+				val = MQ131_RESRATIO_MIN;
+			return val;
+			break;
+		case MQ135_SENSOR:
+			if (resratio + RESRATIO_TOLERANCE > MQ135_RESRATIO_MAX)
+				val = MQ135_RESRATIO_MAX;
+			else if (resratio - RESRATIO_TOLERANCE < MQ135_RESRATIO_MIN)
+				val = MQ135_RESRATIO_MIN;
+			return val;
+			break;
+		case MICS4514_SENSOR_RED:
+			if (resratio + RESRATIO_TOLERANCE > MICS4514_RED_RESRATIO_MAX)
+				val = MICS4514_RED_RESRATIO_MAX;
+			else if (resratio - RESRATIO_TOLERANCE < MICS4514_RED_RESRATIO_MIN)
+				val = MICS4514_RED_RESRATIO_MIN;
+			return val;
+			break;
+		case MICS4514_SENSOR_NOX:
+			if (resratio + RESRATIO_TOLERANCE > MICS4514_NOX_RESRATIO_MAX)
+				val = MICS4514_NOX_RESRATIO_MAX;
+			else if (resratio - RESRATIO_TOLERANCE < MICS4514_NOX_RESRATIO_MIN)
+				val = MICS4514_NOX_RESRATIO_MIN;
+			return val;
+			break;
+		default:
+			PRINTF("normalize_resratio: Invalid parameter \"type\" with value %hhu \n", type);
+			return val;
 	}
 }
 /*------------------------------------------------------------------*/
@@ -321,8 +210,10 @@ measure_aqs_ro(const void* data_ptr)
 	/* make sure it is a valid sensor type */
 	if (aqs_info_data->sensorType != MQ7_SENSOR && 
 			aqs_info_data->sensorType != MQ131_SENSOR &&
-			aqs_info_data->sensorType != MQ135_SENSOR){
-		PRINTF("measure_aqs_ro: sensor(0x%02x) ERROR - unexpected sensor type.",
+			aqs_info_data->sensorType != MQ135_SENSOR &&
+			aqs_info_data->sensorType != MICS4514_SENSOR_RED &&
+			aqs_info_data->sensorType != MICS4514_SENSOR_NOX){
+		PRINTF("measure_aqs_ro: sensor(0x%02x) ERROR - unexpected sensor type.\n",
 			aqs_info_data->sensorType);
 		return 0;
 	}
@@ -351,7 +242,7 @@ measure_aqs_ro(const void* data_ptr)
 	val /= AQS_ADC_CROSSREF;
 	PRINTF("measure_aqs_ro: sensor(0x%02x) mv ADC value = %lu.%lu\n", aqs_info_data->sensorType, val / 10, val % 10);
 	
-	val = ConvertRawValToSensorRes(aqs_info_data->sensorType, val);
+	val = convert_raw_to_sensor_res(aqs_info_data->sensorType, val);
 	PRINTF("measure_aqs_ro: sensor(0x%02x) sensor resistance (milli) = %lu\n", aqs_info_data->sensorType, val);
 	aqs_info[aqs_info_data->sensorType].state = AQS_INIT_PHASE;
 	PRINTF("measure_aqs_ro: sensor(0x%02x) set to AQS_INIT_PHASE.\n", aqs_info_data->sensorType);
@@ -370,12 +261,22 @@ measure_aqs(const void* data_ptr)
 	/* make sure it is a valid sensor type */
 	if (aqs_info_data->sensorType != MQ7_SENSOR && 
 			aqs_info_data->sensorType != MQ131_SENSOR &&
-			aqs_info_data->sensorType != MQ135_SENSOR){
+			aqs_info_data->sensorType != MQ135_SENSOR &&
+			aqs_info_data->sensorType != MQ135_SENSOR &&
+			aqs_info_data->sensorType != MICS4514_SENSOR_RED &&
+			aqs_info_data->sensorType != MICS4514_SENSOR_NOX){
 		PRINTF("measure_aqs: sensor(0x%02x) ERROR - unexpected sensor type.",
 			aqs_info_data->sensorType);
 		return;
 	}
 	
+	/* make sure Ro is initialized */
+	if (aqs_info[aqs_info_data->sensorType].ro == 0) {
+		PRINTF("measure_aqs: sensor(0x%02x) ERROR - Ro is not initialized.",
+			aqs_info_data->sensorType);
+		return;
+	}
+
 	if ( aqs_info[aqs_info_data->sensorType].state != AQS_BUSY &&
 		aqs_info[aqs_info_data->sensorType].state != AQS_ENABLED ){
 		PRINTF("measure_aqs: sensor(0x%02x) is DISABLED.\n",
@@ -401,8 +302,14 @@ measure_aqs(const void* data_ptr)
 
 	PRINTF("measure_aqs: sensor(0x%02x) mv ADC value = %lu.%lu\n", aqs_info_data->sensorType, val / 10, val % 10);
 	
-	aqs_info[aqs_info_data->sensorType].value = ConvertRawValToPPM(aqs_info_data->sensorType, val);
-	PRINTF("measure_aqs: sensor(0x%02x) ppm value = %u.%03u\n", aqs_info_data->sensorType, 
+	//get resistance ratio at this time, precision in 3 decimal digits
+	aqs_info[aqs_info_data->sensorType].value = convert_raw_to_sensor_res(aqs_info_data->sensorType, val) * 1000;
+	aqs_info[aqs_info_data->sensorType].value /= aqs_info[aqs_info_data->sensorType].ro;
+
+	//normalize to expected values
+	aqs_info[aqs_info_data->sensorType].value = normalize_resratio(aqs_info[aqs_info_data->sensorType].value, aqs_info_data->sensorType);
+
+	PRINTF("measure_aqs: sensor(0x%02x) Rs/Ro value = %u.%03u\n", aqs_info_data->sensorType,
 		(uint16_t)aqs_info[aqs_info_data->sensorType].value / 1000, 
 		(uint16_t)( ((float)aqs_info[aqs_info_data->sensorType].value / 1000) - ((uint16_t)aqs_info[aqs_info_data->sensorType].value / 1000) ) * 1000);
 	aqs_info[aqs_info_data->sensorType].state = AQS_ENABLED;
@@ -424,16 +331,50 @@ turn_off_heater(const uint32_t port_base, const uint32_t pin_mask, const uint16_
 }
 /*------------------------------------------------------------------*/
 static int
+map_spec_type_to_generic_type
+(uint8_t calibType){
+	switch(calibType){
+		case MQ7_SENSOR_RO:
+			return MQ7_SENSOR;
+		case MQ131_SENSOR_RO:
+			return MQ131_SENSOR;
+		case MQ135_SENSOR_RO:
+			return MQ135_SENSOR;
+		case MICS4514_SENSOR_RED_RO:
+			return MICS4514_SENSOR_RED;
+		case MICS4514_SENSOR_NOX_RO:
+			return MICS4514_SENSOR_NOX;
+		default:
+			PRINTF("Error for AQS: map_calib_to_sensor_type: ERROR - invalid sensor type specified.\n");
+			return AQS_ERROR;
+	}
+}
+/*------------------------------------------------------------------*/
+static int
 configure(int type, int value)
 {
-	if(type != SENSORS_ACTIVE) {
-		PRINTF("Error for AQS: configure function parameter \'type\' is not SENSORS_ACTIVE.\n");
+	if(type != AQS_ENABLE && type != AQS_DISABLE) {
+		PRINTF("Error for AQS: configure function parameter \'type\' is not AQS_ENABLE or AQS_DISABLE.\n");
 		return AQS_ERROR;
 	}
 
 	switch (value)
 	{
 	case MQ7_SENSOR:
+		if (type == AQS_DISABLE){
+			if ( process_is_running(&aqs_mq7_calibration_process) )
+				process_exit(&aqs_mq7_calibration_process);
+
+			if ( process_is_running(&aqs_mq7_measurement_process) )
+				process_exit(&aqs_mq7_measurement_process);
+
+			aqs_info[MQ7_SENSOR].state = AQS_DISABLED;
+			aqs_info[MQ7_SENSOR].ro = 0;
+			aqs_info[MQ7_SENSOR].value = 0;
+
+			return AQS_SUCCESS;
+		}
+
 		//do not re-enable the sensor
 		if ( aqs_info[MQ7_SENSOR].state == AQS_ENABLED || aqs_info[MQ7_SENSOR].state == AQS_BUSY ||
 			aqs_info[MQ7_SENSOR].state == AQS_INIT_PHASE ) {
@@ -445,18 +386,34 @@ configure(int type, int value)
 			PRINTF("Error for AQS: configure function (MQ7_SENSOR) - Failed to configure ADC sensor.\n");
 			return AQS_ERROR;
 		}
+
 		//set initial values
 		aqs_info[MQ7_SENSOR].ro = MQ7_RO_CLEAN_AIR * OHM_SCALETO_MILLIOHM;
 		aqs_info[MQ7_SENSOR].state = AQS_INIT_PHASE;
+		aqs_info[MQ7_SENSOR].value = 0;
 		allocate_calibrate_event();
 		PRINTF("AQS: configure function - MQ7_SENSOR state changed to AQS_INIT_PHASE, proceeding to heating/calibration.\n");
 
-		//begin the heating process
+		//begin the measurement cycling process
 		process_start(&aqs_mq7_measurement_process, NULL);
 
 		return AQS_SUCCESS;
 		break;
 	case MQ131_SENSOR:
+		if (type == AQS_DISABLE){
+			if ( process_is_running(&aqs_mq131_calibration_process) )
+				process_exit(&aqs_mq131_calibration_process);
+
+			if ( process_is_running(&aqs_mq131_measurement_process) )
+				process_exit(&aqs_mq131_measurement_process);
+
+			aqs_info[MQ131_SENSOR].state = AQS_DISABLED;
+			aqs_info[MQ131_SENSOR].ro = 0;
+			aqs_info[MQ131_SENSOR].value = 0;
+
+			return AQS_SUCCESS;
+		}
+
 		//do not re-enable the sensor
 		if (aqs_info[MQ131_SENSOR].state == AQS_ENABLED || aqs_info[MQ131_SENSOR].state == AQS_BUSY || 
 			aqs_info[MQ131_SENSOR].state == AQS_INIT_PHASE) {
@@ -468,18 +425,35 @@ configure(int type, int value)
 			PRINTF("Error for AQS: configure function (MQ131_SENSOR) - Failed to configure ADC sensor.\n");
 			return AQS_ERROR;
 		}
+
 		//set initial values
 		aqs_info[MQ131_SENSOR].ro = MQ131_RO_CLEAN_AIR * OHM_SCALETO_MILLIOHM;
 		aqs_info[MQ131_SENSOR].state = AQS_INIT_PHASE;
-		allocate_calibrate_event();
-		PRINTF("AQS: configure function - MQ131_SENSOR state changed to AQS_INIT_PHASE, proceeding to heating/calibration.\n");
+		aqs_info[MQ131_SENSOR].value = 0;
 
-		//begin the heating process
+		allocate_calibrate_event();
+		PRINTF("AQS: configure function - MQ131_SENSOR state changed to AQS_INIT_PHASE, proceeding to calibration.\n");
+
+		//begin the measurement cycling process
 		process_start(&aqs_mq131_measurement_process, NULL);
 				
 		return AQS_SUCCESS;
 		break;
 	case MQ135_SENSOR:
+		if (type == AQS_DISABLE){
+			if ( process_is_running(&aqs_mq135_calibration_process) )
+				process_exit(&aqs_mq135_calibration_process);
+
+			if ( process_is_running(&aqs_mq135_measurement_process) )
+				process_exit(&aqs_mq135_measurement_process);
+
+			aqs_info[MQ135_SENSOR].state = AQS_DISABLED;
+			aqs_info[MQ135_SENSOR].ro = 0;
+			aqs_info[MQ135_SENSOR].value = 0;
+
+			return AQS_SUCCESS;
+		}
+
 		//do not re-enable the sensor
 		if ( aqs_info[MQ135_SENSOR].state == AQS_ENABLED || aqs_info[MQ135_SENSOR].state == AQS_BUSY ||
 			aqs_info[MQ135_SENSOR].state == AQS_INIT_PHASE) {
@@ -494,12 +468,68 @@ configure(int type, int value)
 		//set initial values
 		aqs_info[MQ135_SENSOR].ro = MQ135_RO_CLEAN_AIR * OHM_SCALETO_MILLIOHM;
 		aqs_info[MQ135_SENSOR].state = AQS_INIT_PHASE;
-		allocate_calibrate_event();
-		PRINTF("AQS: configure function - MQ135_SENSOR state changed to AQS_INIT_PHASE, proceeding to heating/calibration.\n");
+		aqs_info[MQ131_SENSOR].value = 0;
 
-		//begin the heating process
+		allocate_calibrate_event();
+		PRINTF("AQS: configure function - MQ135_SENSOR state changed to AQS_INIT_PHASE, proceeding to calibration.\n");
+
+		//begin the measurement cycling process
 		process_start(&aqs_mq135_measurement_process, NULL);
 		
+		return AQS_SUCCESS;
+		break;
+	case MICS4514_SENSOR_RED:
+	case MICS4514_SENSOR_NOX:
+		if (type == AQS_DISABLE){
+			if ( process_is_running(&aqs_mics4514_calibration_process) )
+				process_exit(&aqs_mics4514_calibration_process);
+
+			if ( process_is_running(&aqs_mics4514_measurement_process) )
+				process_exit(&aqs_mics4514_measurement_process);
+
+			aqs_info[MICS4514_SENSOR_NOX].state = AQS_DISABLED;
+			aqs_info[MICS4514_SENSOR_NOX].ro = 0;
+			aqs_info[MICS4514_SENSOR_NOX].value = 0;
+
+			aqs_info[MICS4514_SENSOR_RED].state = AQS_DISABLED;
+			aqs_info[MICS4514_SENSOR_RED].ro = 0;
+			aqs_info[MICS4514_SENSOR_RED].value = 0;
+
+			return AQS_SUCCESS;
+		}
+
+		//do not re-enable the sensor
+		if ( aqs_info[MICS4514_SENSOR_NOX].state == AQS_ENABLED || aqs_info[MICS4514_SENSOR_NOX].state == AQS_BUSY ||
+			aqs_info[MICS4514_SENSOR_NOX].state == AQS_INIT_PHASE || aqs_info[MICS4514_SENSOR_RED].state == AQS_ENABLED ||
+			aqs_info[MICS4514_SENSOR_RED].state == AQS_BUSY || aqs_info[MICS4514_SENSOR_RED].state == AQS_INIT_PHASE) {
+			PRINTF("AQS: configure function - MICS4514 already enabled.\n");
+			return AQS_SUCCESS;
+		}
+
+		if(adc_zoul.configure(SENSORS_HW_INIT, MICS4514_SENSOR_RED_PIN_MASK) == ZOUL_SENSORS_ERROR) {
+			PRINTF("Error for AQS: configure function (MICS4514_RED) - Failed to configure ADC sensor.\n");
+			return AQS_ERROR;
+		}
+		if(adc_zoul.configure(SENSORS_HW_INIT, MICS4514_SENSOR_NOX_PIN_MASK) == ZOUL_SENSORS_ERROR) {
+			PRINTF("Error for AQS: configure function (MICS4514_NOX) - Failed to configure ADC sensor.\n");
+			return AQS_ERROR;
+		}
+
+		//set initial values
+		aqs_info[MICS4514_SENSOR_NOX].ro = MICS4514_NOX_RO_CLEAN_AIR * OHM_SCALETO_MILLIOHM;
+		aqs_info[MICS4514_SENSOR_NOX].state = AQS_INIT_PHASE;
+		aqs_info[MICS4514_SENSOR_NOX].value = 0;
+
+		aqs_info[MICS4514_SENSOR_RED].ro = MICS4514_RED_RO_CLEAN_AIR * OHM_SCALETO_MILLIOHM;
+		aqs_info[MICS4514_SENSOR_RED].state = AQS_INIT_PHASE;
+		aqs_info[MICS4514_SENSOR_RED].value = 0;
+
+		allocate_calibrate_event();
+		PRINTF("AQS: configure function - MICS4514 state changed to AQS_INIT_PHASE, proceeding to calibration.\n");
+
+		//begin the measurement cycling process
+		process_start(&aqs_mics4514_measurement_process, NULL);
+
 		return AQS_SUCCESS;
 		break;
 	default:
@@ -512,26 +542,50 @@ static int
 value(int type)
 {
 	/* make sure it is a valid sensor type */
-	if (type != MQ7_SENSOR && 
+	if ( type != MQ7_SENSOR &&
 			type != MQ131_SENSOR &&
-			type != MQ135_SENSOR){
-		PRINTF("AQS value function: ERROR - unexpected sensor type.");
+			type != MQ135_SENSOR &&
+			type != MQ7_SENSOR_RO &&
+			type != MICS4514_SENSOR_RED &&
+			type != MICS4514_SENSOR_NOX &&
+			type != MQ131_SENSOR_RO &&
+			type != MQ135_SENSOR_RO &&
+			type != MICS4514_SENSOR_NOX_RO &&
+			type != MICS4514_SENSOR_RED_RO){
+		PRINTF("AQS value function: ERROR - unexpected sensor type.\n");
 		return AQS_ERROR;
 	}
+	int sensorType = type;
+	/* must map to standard type if specific type */
+	if (type == MQ7_SENSOR_RO ||
+			type == MQ131_SENSOR_RO ||
+			type == MQ135_SENSOR_RO ||
+			type == MICS4514_SENSOR_NOX_RO ||
+			type == MICS4514_SENSOR_RED_RO){
+		sensorType = map_spec_type_to_generic_type(sensorType);
+	}
+
 	
-	/* make sure sensor is enabled or not initializating*/
-	if ( aqs_info[type].state != AQS_ENABLED && aqs_info[type].state != AQS_INIT_PHASE 
-		&& aqs_info[type].state != AQS_BUSY) {
-		PRINTF("AQS value function: ERROR - sensor is not enabled.");
-		return AQS_ERROR;
+	switch(aqs_info[sensorType].state){
+		case AQS_DISABLED:
+			PRINTF("AQS value function: ERROR - sensor is disabled.\n");
+			return AQS_ERROR;
+		case AQS_INIT_PHASE:
+			PRINTF("AQS value function: ERROR - sensor is initializing.\n");
+			return AQS_INITIALIZING;
+		case AQS_BUSY:
+			PRINTF("AQS value function: WARNING - sensor is busy. Measured value may be obsolete.\n");
+		case AQS_ENABLED:
+		default:
+			if (type == MQ7_SENSOR_RO ||
+					type == MQ131_SENSOR_RO ||
+					type == MQ135_SENSOR_RO ||
+					type == MICS4514_SENSOR_NOX_RO ||
+					type == MICS4514_SENSOR_RED_RO)
+				return aqs_info[sensorType].ro;
+			else
+				return aqs_info[sensorType].value;
 	}
-
-	/* warn when sensor is measuring */
-	if ( aqs_info[type].state == AQS_BUSY ) {
-		PRINTF("AQS value function: WARNING - sensor is currently measuring.");
-	}
-
-	return aqs_info[type].value;
 }
 /*------------------------------------------------------------------*/
 static int
@@ -539,8 +593,10 @@ status(int type){
 	/* make sure it is a valid sensor type */
 	if (type != MQ7_SENSOR && 
 			type != MQ131_SENSOR &&
-			type != MQ135_SENSOR){
-		PRINTF("AQS status function: ERROR - unexpected sensor type.");
+			type != MQ135_SENSOR &&
+			type != MICS4514_SENSOR_RED &&
+			type != MICS4514_SENSOR_NOX){
+		PRINTF("AQS status function: ERROR - unexpected sensor type.\n");
 		return AQS_ERROR;
 	}
 	
@@ -572,9 +628,9 @@ PROCESS_THREAD(aqs_mq7_calibration_process, ev, data)
 		PRINTF("Ro at clean air = %lu\n", aqs_info[MQ7_SENSOR].ro);
 		aqs_info[MQ7_SENSOR].state = AQS_ENABLED;
 		PRINTF("AQS(MQ7): aqs calibration process - sensor set to ENABLED.\n");
-		process_post(&aqs_mq7_measurement_process, calibration_finished_event, NULL);
 		PRINTF("aqs_mq7_calibration_process: posted calibration_finished_event to aqs_mq7_measurement_process\n");
 		PRINTF("AQS(MQ7): aqs calibration process - exiting process\n");
+		process_post(&aqs_mq7_measurement_process, calibration_finished_event, NULL);
 		PROCESS_EXIT();
 	}
 	
@@ -638,9 +694,9 @@ PROCESS_THREAD(aqs_mq131_calibration_process, ev, data)
 		PRINTF("Ro at clean air = %lu\n", aqs_info[MQ131_SENSOR].ro);
 		aqs_info[MQ131_SENSOR].state = AQS_ENABLED;
 		PRINTF("AQS(MQ131): aqs calibration process - sensor set to ENABLED.\n");
-		process_post(&aqs_mq131_measurement_process, calibration_finished_event, NULL);
 		PRINTF("aqs_mq131_calibration_process: posted calibration_finished_event to aqs_mq131_measurement_process\n");
 		PRINTF("AQS(MQ131): aqs calibration process - exiting process\n");
+		process_post(&aqs_mq131_measurement_process, calibration_finished_event, NULL);
 		PROCESS_EXIT();
 	}
 	
@@ -696,9 +752,9 @@ PROCESS_THREAD(aqs_mq135_calibration_process, ev, data)
 		PRINTF("Ro at clean air = %lu\n", aqs_info[MQ135_SENSOR].ro);
 		aqs_info[MQ135_SENSOR].state = AQS_ENABLED;
 		PRINTF("AQS(MQ135): aqs calibration process - sensor set to ENABLED.\n");
-		process_post(&aqs_mq135_measurement_process, calibration_finished_event, NULL);
 		PRINTF("aqs_mq135_calibration_process: posted calibration_finished_event to aqs_mq135_measurement_process\n");
 		PRINTF("AQS(MQ135): aqs calibration process - exiting process\n");
+		process_post(&aqs_mq135_measurement_process, calibration_finished_event, NULL);
 		PROCESS_EXIT();
 	}
 	
@@ -728,6 +784,98 @@ PROCESS_THREAD(aqs_mq135_calibration_process, ev, data)
 	process_post(&aqs_mq135_measurement_process, calibration_finished_event, NULL);
 	PRINTF("aqs_mq135_calibration_process: posted calibration_finished_event to aqs_mq135_measurement_process\n");
 
+	PROCESS_END();
+}
+/*------------------------------------------------------------------*/
+PROCESS_THREAD(aqs_mics4514_calibration_process, ev, data)
+{
+	//declarations
+	static struct etimer et;
+	static uint8_t sampleCount;
+	/* Rs = sensor resistance in various conditions (in milliohms)*/
+	static uint32_t rs_red;
+	static uint32_t rs_nox;
+	static measure_aqs_data_t measure_aqs_data_red;
+	static measure_aqs_data_t measure_aqs_data_nox;
+
+	PROCESS_EXITHANDLER();
+	PROCESS_BEGIN();
+	PRINTF(aqs_mics4514_calibration_process.name);
+	PRINTF(" started\n");
+
+	//initialization
+	rs_red = rs_nox = 0;
+	sampleCount = 0;
+	measure_aqs_data_red.sensorType = MICS4514_SENSOR_RED;
+	measure_aqs_data_red.measure_pin_mask = MICS4514_SENSOR_RED_PIN_MASK;
+	measure_aqs_data_nox.sensorType = MICS4514_SENSOR_NOX;
+	measure_aqs_data_nox.measure_pin_mask = MICS4514_SENSOR_NOX_PIN_MASK;
+
+	//check if sensor has already been initialized/calibrated
+	if (aqs_info[MICS4514_SENSOR_RED].ro > 0 && aqs_info[MICS4514_SENSOR_NOX].ro){
+		PRINTF(aqs_mics4514_calibration_process.name);
+		PRINTF(" - sensor has been calibrated already with default value\n");
+		PRINTF("Ro (RED) at clean air = %lu\n", aqs_info[MICS4514_SENSOR_RED].ro);
+		PRINTF("Ro (NOX) at clean air = %lu\n", aqs_info[MICS4514_SENSOR_NOX].ro);
+
+		aqs_info[MICS4514_SENSOR_RED].state = AQS_ENABLED;
+		aqs_info[MICS4514_SENSOR_NOX].state = AQS_ENABLED;
+		PRINTF(aqs_mics4514_calibration_process.name);
+		PRINTF(" - sensor set to ENABLED.\n");
+
+		PRINTF(aqs_mics4514_calibration_process.name);
+		PRINTF(": posted calibration_finished_event to ");
+		PRINTF(aqs_mics4514_measurement_process.name);
+		PRINTF("\n");
+
+		PRINTF(aqs_mics4514_calibration_process.name);
+		PRINTF(": aqs calibration process - exiting process\n");
+		process_post(&aqs_mics4514_measurement_process, calibration_finished_event, NULL);
+		PROCESS_EXIT();
+	}
+
+	aqs_info[MICS4514_SENSOR_RED].state = AQS_INIT_PHASE;
+	aqs_info[MICS4514_SENSOR_NOX].state = AQS_INIT_PHASE;
+	aqs_info[MICS4514_SENSOR_RED].ro = 0;
+	aqs_info[MICS4514_SENSOR_NOX].ro = 0;
+	PRINTF(aqs_mics4514_calibration_process.name);
+	PRINTF(" - sensor set to AQS_INIT_PHASE.\n");
+	while (sampleCount != CALIBRATION_SAMPLE_COUNT){
+		PRINTF(aqs_mics4514_calibration_process.name);
+		PRINTF(" - sampling %hhu out of %d.\n", sampleCount + 1, CALIBRATION_SAMPLE_COUNT);
+
+		rs_red = measure_aqs_ro( &measure_aqs_data_red );
+		aqs_info[MICS4514_SENSOR_RED].ro += rs_red;
+
+		rs_nox = measure_aqs_ro( &measure_aqs_data_nox );
+		aqs_info[MICS4514_SENSOR_NOX].ro += rs_nox;
+
+		//set a sampling duration
+		etimer_set(&et, CLOCK_SECOND * MICS4514_MEASUREMENT_INTERVAL);
+		//wait for sampling period to lapse
+		PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et) );
+
+		sampleCount++;
+	}
+
+	aqs_info[MICS4514_SENSOR_RED].ro /= sampleCount;
+	aqs_info[MICS4514_SENSOR_NOX].ro /= sampleCount;
+
+	PRINTF(aqs_mics4514_calibration_process.name);
+	PRINTF(": aqs calibration process - calibration finished w/ values.\n");
+	PRINTF("(RED)Ro at clean air = %lu\n", aqs_info[MICS4514_SENSOR_RED].ro);
+	PRINTF("(NOX)Ro at clean air = %lu\n", aqs_info[MICS4514_SENSOR_NOX].ro);
+
+	aqs_info[MICS4514_SENSOR_RED].state = AQS_ENABLED;
+	aqs_info[MICS4514_SENSOR_NOX].state = AQS_ENABLED;
+
+	PRINTF(aqs_mics4514_calibration_process.name);
+	PRINTF(": aqs calibration process - sensor set to ENABLED.\n");
+
+	process_post(&aqs_mics4514_measurement_process, calibration_finished_event, NULL);
+	PRINTF(aqs_mics4514_calibration_process.name);
+	PRINTF(": posted calibration_finished_event to \n");
+	PRINTF(aqs_mics4514_measurement_process.name);
 	PROCESS_END();
 }
 /*------------------------------------------------------------------*/
@@ -887,6 +1035,67 @@ PROCESS_THREAD(aqs_mq135_measurement_process, ev, data)
 		PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et) );
 	}
 	
+	PROCESS_END();
+}
+/*------------------------------------------------------------------*/
+PROCESS_THREAD(aqs_mics4514_measurement_process, ev, data)
+{
+	//declarations
+	static struct etimer et;
+	static measure_aqs_data_t measure_aqs_red_data;
+	static measure_aqs_data_t measure_aqs_nox_data;
+
+	PROCESS_EXITHANDLER();
+	PROCESS_BEGIN();
+	PRINTF(aqs_mics4514_measurement_process.name);
+	PRINTF(" started\n");
+
+	//make sure sensor is enabled or in init phase
+	if ( aqs_info[MICS4514_SENSOR_NOX].state != AQS_ENABLED && aqs_info[MICS4514_SENSOR_NOX].state != AQS_INIT_PHASE &&
+			aqs_info[MICS4514_SENSOR_RED].state != AQS_ENABLED && aqs_info[MICS4514_SENSOR_RED].state != AQS_INIT_PHASE) {
+		PRINTF(aqs_mics4514_measurement_process.name);
+		PRINTF(": ERROR - sensor is not enabled.");
+		PROCESS_EXIT();
+	}
+
+	measure_aqs_red_data.sensorType = MICS4514_SENSOR_RED;
+	measure_aqs_red_data.measure_pin_mask = MICS4514_SENSOR_RED_PIN_MASK;
+
+	measure_aqs_nox_data.sensorType = MICS4514_SENSOR_NOX;
+	measure_aqs_nox_data.measure_pin_mask = MICS4514_SENSOR_NOX_PIN_MASK;
+
+	/* pre-heat procedure */
+	turn_on_heater(MICS4514_SENSOR_HEATING_PORT_BASE, MICS4514_SENSOR_HEATING_PIN_MASK, MICS4514_HEATING_TIME, &et);
+	PRINTF(aqs_mics4514_measurement_process.name);
+	PRINTF(": pre-heat procedure started\n");
+
+	PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et) );
+	turn_off_heater(MICS4514_SENSOR_HEATING_PORT_BASE, MICS4514_SENSOR_HEATING_PIN_MASK, 0, &et);
+	PRINTF(aqs_mics4514_measurement_process.name);
+	PRINTF(": pre-heat procedure ended\n");
+
+	//call the calibration procedure
+	process_start(&aqs_mics4514_calibration_process, NULL);
+
+	PRINTF(aqs_mics4514_measurement_process.name);
+	PRINTF(": process paused\n");
+	//wait for calibration to finish
+	while (ev != calibration_finished_event){
+		PROCESS_WAIT_EVENT();
+	}
+	PRINTF(aqs_mics4514_measurement_process.name);
+	PRINTF(": process resumed\n");
+
+	/* measurement cycling */
+	PRINTF(aqs_mics4514_measurement_process.name);
+	PRINTF(": measurement cycling started\n");
+	while(1){
+		etimer_set(&et, CLOCK_SECOND * MICS4514_MEASUREMENT_INTERVAL);
+		measure_aqs( &measure_aqs_red_data );
+		measure_aqs( &measure_aqs_nox_data );
+		PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et) );
+	}
+
 	PROCESS_END();
 }
 /*------------------------------------------------------------------*/

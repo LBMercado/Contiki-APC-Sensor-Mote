@@ -46,9 +46,9 @@ const uint8_t SENSOR_TYPES[SENSOR_COUNT] = {
 	TEMPERATURE_T, //unit in Deg. Celsius
 	HUMIDITY_T, //unit in %RH
 	PM25_T, //unit in microgram per m3
-	CO_T, //unit in ppm
-	CO2_T, //unit in ppm
-	O3_T, //unit in ppm
+	CO_T, //unitless, raw resistance ratio to compute ppm
+	NO2_T, //unitless, raw resistance ratio to compute ppm
+	O3_T, //unitless, raw resistance ratio to compute ppm
 	WIND_SPEED_T, //unit in m/s
 	WIND_DRCTN_T //may be N, S, E, W and their combinations
 };
@@ -56,7 +56,7 @@ const uint8_t SENSOR_TYPES[SENSOR_COUNT] = {
 const uint8_t SENSOR_CALIB_TYPES[SENSOR_CALIB_COUNT] =
 {
 	CO_RO_T, //unit in ohms, sf. by 3 digits
-	CO2_RO_T, //unit in ohms, sf. by 3 digits
+	NO2_RO_T, //unit in ohms, sf. by 3 digits
 	O3_RO_T //unit in ohms, sf. by 3 digits
 };
 /*----------------------------------------------------------------------------------*/
@@ -142,12 +142,9 @@ activate_sensor
 		retCode = pm25.configure(SENSORS_ACTIVE, PM25_ENABLE);
 		return retCode != PM25_ERROR ? APC_SENSOR_OPSUCCESS : APC_SENSOR_OPFAILURE;
 		break;
+	case NO2_T:
 	case CO_T:
-		retCode = aqs_sensor.configure(AQS_ENABLE, MQ7_SENSOR);
-		return retCode != AQS_ERROR ? APC_SENSOR_OPSUCCESS : APC_SENSOR_OPFAILURE;
-		break;
-	case CO2_T:
-		retCode = aqs_sensor.configure(AQS_ENABLE, MQ135_SENSOR);
+		retCode = aqs_sensor.configure(AQS_ENABLE, MICS4514_SENSOR);
 		return retCode != AQS_ERROR ? APC_SENSOR_OPSUCCESS : APC_SENSOR_OPFAILURE;
 		break;
 	case O3_T:
@@ -203,8 +200,8 @@ map_sensor_to_calib_type
 			return O3_RO_T;
 
 			break;
-		case CO2_T:
-			return CO2_RO_T;
+		case NO2_T:
+			return NO2_RO_T;
 
 			break;
 		default:
@@ -225,8 +222,8 @@ map_calib_to_sensor_type
 			return O3_T;
 
 			break;
-		case CO2_RO_T:
-			return CO2_T;
+		case NO2_RO_T:
+			return NO2_T;
 
 			break;
 		default:
@@ -249,7 +246,7 @@ read_calib_sensor
 
 	switch(calibType){
 		case CO_RO_T:
-			value = aqs_sensor.value(MQ7_SENSOR_RO);
+			value = aqs_sensor.value(MICS4514_SENSOR_RED_RO);
 			if (value == AQS_ERROR){
 				PRINTF("-----------------\n");
 				PRINTF("read_sensor: CO_RO_T \n");
@@ -281,18 +278,18 @@ read_calib_sensor
 			}
 
 			break;
-		case CO2_RO_T:
-			value = aqs_sensor.value(MQ135_SENSOR_RO);
+		case NO2_RO_T:
+			value = aqs_sensor.value(MICS4514_SENSOR_NOX_RO);
 			if (value == AQS_ERROR){
 				PRINTF("-----------------\n");
-				PRINTF("read_sensor: CO2_RO_T \n");
+				PRINTF("read_sensor: NO2_RO_T \n");
 				PRINTF("Failed to read sensor.\n");
 				PRINTF("-----------------\n");
 				return APC_SENSOR_OPFAILURE;
 			}
 			else if (value == AQS_INITIALIZING){
 				PRINTF("-----------------\n");
-				PRINTF("read_sensor: CO2_RO_T \n");
+				PRINTF("read_sensor: NO2_RO_T \n");
 				PRINTF("sensor is initializing.\n");
 				PRINTF("-----------------\n");
 				return APC_SENSOR_OPFAILURE;
@@ -305,7 +302,7 @@ read_calib_sensor
 				value % 1000
 				);
 				PRINTF("-----------------\n");
-				PRINTF("read_sensor: CO2_RO_T \n");
+				PRINTF("read_sensor: NO2_RO_T \n");
 				PRINTF("RO: %d.%03d\n",
 					value / 1000,
 					value % 1000);
@@ -448,7 +445,7 @@ read_sensor
 		}
 		break;
 	case CO_T:
-		value = aqs_sensor.value(MQ7_SENSOR);
+		value = aqs_sensor.value(MICS4514_SENSOR_RED);
 		if (value == AQS_ERROR){
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: CO_T \n");
@@ -471,25 +468,25 @@ read_sensor
 			);
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: CO_T \n");
-			PRINTF("PPM: %d.%03d\n",
+			PRINTF("Rs/Ro: %d.%03d\n",
 				value / 1000,
 				value % 1000);
 			PRINTF("-----------------\n");
 			return APC_SENSOR_OPSUCCESS;
 		}
 		break;
-	case CO2_T:
-		value = aqs_sensor.value(MQ135_SENSOR);
+	case NO2_T:
+		value = aqs_sensor.value(MICS4514_SENSOR_NOX);
 		if (value == AQS_ERROR){
 			PRINTF("-----------------\n");
-			PRINTF("read_sensor: CO2_T \n");
+			PRINTF("read_sensor: NO2_T \n");
 			PRINTF("Failed to read sensor.\n");
 			PRINTF("-----------------\n");
 			return APC_SENSOR_OPFAILURE;
 		}
 		else if (value == AQS_INITIALIZING){
 			PRINTF("-----------------\n");
-			PRINTF("read_sensor: CO2_T \n");
+			PRINTF("read_sensor: NO2_T \n");
 			PRINTF("sensor is initializing.\n");
 			PRINTF("-----------------\n");
 			return APC_SENSOR_OPFAILURE;
@@ -501,8 +498,8 @@ read_sensor
 			value % 1000
 			);
 			PRINTF("-----------------\n");
-			PRINTF("read_sensor: CO2_T \n");
-			PRINTF("PPM: %d.%03d\n", 
+			PRINTF("read_sensor: NO2_T \n");
+			PRINTF("Rs/Ro: %d.%03d\n",
 				value / 1000,
 				value % 1000);
 			PRINTF("-----------------\n");
@@ -533,7 +530,7 @@ read_sensor
 			);
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: O3_T \n");
-			PRINTF("PPM: %d.%03d\n", 
+			PRINTF("Rs/Ro: %d.%03d\n",
 				value / 1000,
 				value % 1000);
 			PRINTF("-----------------\n");

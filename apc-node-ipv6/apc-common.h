@@ -38,16 +38,15 @@ typedef enum
 	TEMPERATURE_T, //unit in Deg. Celsius
 	HUMIDITY_T, //unit in %RH
 	PM25_T, //unit in ug/m3
-	CO_T, //unit in ppm
-	/*NO2_T, //unit in ppm, unused */
-	CO2_T, //unit in ppm
-	O3_T, //unit in ppm
+	CO_T, //unitless, raw resistance ratio to compute ppm
+	NO2_T, //unitless, raw resistance ratio to compute ppm
+	O3_T, //unitless, raw resistance ratio to compute ppm
 	WIND_SPEED_T, //unit in m/s
 	WIND_DRCTN_T, //may be N, S, E, W and their combinations
 
 	//calibration values that denote initial config of sensor
 	CO_RO_T,
-	CO2_RO_T,
+	NO2_RO_T,
 	O3_RO_T
 } apc_iot_message_t;
 /*---------------------------------------------------------*/
@@ -81,13 +80,13 @@ typedef struct sensor_node {
 	char temperature[8]; //unit in Deg. Celsius
 	char humidity[8];    //unit in %RH (0%-100%)
 	char PM25[8];        //unit in ug/m3
-	char CO[8];          //unit in ppm
-	char CO2[8];         //unit in ppm
-	char O3[8];          //unit in ppm
+	char CO[8];          //unitless, raw resistance ratio to compute ppm
+	char NO2[8];         //unitless, raw resistance ratio to compute ppm
+	char O3[8];          //unitless, raw resistance ratio to compute ppm
 	char windSpeed[8];   //unit in m/s
 	char windDir[2];     //may be N, S, E, W and their combinations (NW, NE, SW, SE)
 	char CO_RO[8];       //base resistance of sensor in ohms, sf. in 3 decimal digits
-	char CO2_RO[8];       //base resistance of sensor in ohms, sf. in 3 decimal digits
+	char NO2_RO[8];       //base resistance of sensor in ohms, sf. in 3 decimal digits
 	char O3_RO[8];       //base resistance of sensor in ohms, sf. in 3 decimal digits
 } sensor_node_t;
 /*---------------------------------------------------------*/
