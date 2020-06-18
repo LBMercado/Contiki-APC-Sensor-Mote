@@ -11,14 +11,23 @@ def get_api_key():
 def get_weather(api_key, location):
     url = "https://api.openweathermap.org/data/2.5/weather?q={}&units=metric&appid={}".format(location, api_key)
     r = requests.get(url)
+    if r.status_code == 200:
+        return r.json()['weather']
     if r.status_code == 404:
         print("Weather API: ERROR - API url does not exist.")
         return None
     elif r.status_code == 403:
+        print("Weather API: ERROR - Forbidden.")
+        return None
+    elif r.status_code == 401:
         print("Weather API: ERROR - Unauthorized.")
         return None
+    elif r.status_code == 429:
+        print("Weather API: ERROR - Exceeded maximum API call count.")
+        return None
     else:
-        return r.json()['weather']
+        print("Weather API: ERROR - Unknown error.")
+        return None
         
 def main():
     if len(sys.argv) != 2:
