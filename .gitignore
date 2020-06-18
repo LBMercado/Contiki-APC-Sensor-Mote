@@ -171,3 +171,6 @@ obj_zoul/
 
 #python 
 .pyc
+
+#api keys
+config.ini

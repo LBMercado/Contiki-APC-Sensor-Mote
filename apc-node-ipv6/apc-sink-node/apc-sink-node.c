@@ -99,14 +99,14 @@ summarize_readings_callback(void* arg)
 		PRINTF("Temperature: %s deg. Celsius\n", n->temperature);
 		PRINTF("Humidity: %s %%RH\n", n->humidity);
 		PRINTF("PM25: %s ug/m3\n", n->PM25);
-		PRINTF("CO: %s PPM\n", n->CO);
-		PRINTF("CO2: %s PPM\n", n->CO2);
-		PRINTF("O3: %s PPM\n", n->O3);
+		PRINTF("CO: %s Rs/Ro\n", n->CO);
+		PRINTF("NO2: %s Rs/Ro\n", n->NO2);
+		PRINTF("O3: %s Rs/Ro\n", n->O3);
 		PRINTF("Wind Speed: %s\n", n->windSpeed);
 		PRINTF("Wind Direction: %s\n", n->windDir);
-		PRINTF("CO Ro: %s\n", n->CO_RO);
-		PRINTF("CO2 Ro: %s\n", n->CO2_RO);
-		PRINTF("O3 Ro: %s\n", n->O3_RO);
+		PRINTF("CO Ro: %s Ω\n", n->CO_RO);
+		PRINTF("NO2 Ro: %s Ω\n", n->NO2_RO);
+		PRINTF("O3 Ro: %s Ω\n", n->O3_RO);
 	}
 	PRINTF("------------------\n");
 }
@@ -200,12 +200,12 @@ update_sensor_node_reading(const uip_ipaddr_t* nodeAddress, sensor_reading_t* re
 				PRINT6ADDR(nodeAddress);
 				PRINTF(") UPDATED with value: %s\n", n->CO);
 				break;
-			case CO2_T:
-				strcpy(n->CO2, reading->data);
+			case NO2_T:
+				strcpy(n->NO2, reading->data);
 				
-				PRINTF("CO2_T of sensor node (");
+				PRINTF("NO2_T of sensor node (");
 				PRINT6ADDR(nodeAddress);
-				PRINTF(") UPDATED with value: %s\n", n->CO2);
+				PRINTF(") UPDATED with value: %s\n", n->NO2);
 				break;
 			case O3_T:
 				strcpy(n->O3, reading->data);
@@ -235,12 +235,12 @@ update_sensor_node_reading(const uip_ipaddr_t* nodeAddress, sensor_reading_t* re
 				PRINT6ADDR(nodeAddress);
 				PRINTF(") UPDATED with value: %s\n", n->CO_RO);
 				break;
-			case CO2_RO_T:
-				strcpy(n->CO2_RO, reading->data);
+			case NO2_RO_T:
+				strcpy(n->NO2_RO, reading->data);
 
-				PRINTF("CO2_RO_T of sensor node (");
+				PRINTF("NO2_RO_T of sensor node (");
 				PRINT6ADDR(nodeAddress);
-				PRINTF(") UPDATED with value: %s\n", n->CO2_RO);
+				PRINTF(") UPDATED with value: %s\n", n->NO2_RO);
 				break;
 			case O3_RO_T:
 				strcpy(n->O3_RO, reading->data);

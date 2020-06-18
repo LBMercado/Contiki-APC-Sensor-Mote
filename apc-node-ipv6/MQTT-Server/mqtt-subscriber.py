@@ -1,25 +1,26 @@
 import paho.mqtt.client as mqtt
-import data_access
+from data_access import DataAccess
+from sensor_msg_parser import SensorMessage
 import weather_access
 import json
 
 """ MQTT Parameters """
-subscriber_id = "apc-iot:subx1"
-address = "fd00::1"
-mqtt_port = 1883
-keep_alive_time = 60
-topic = "apc-iot/#"
-qos_level = 0
-client = mqtt.Client(subscriber_id, protocol=mqtt.MQTTv31)
+SUBSCRIBER_ID = "apc-iot:subx1"
+SERVER_ADDR = "fd00::1"
+MQTT_PORT = 1883
+KEEP_ALIVE_TIME = 60
+TOPIC = "apc-iot/#"
+QOS_LEVEL = 0
+client = mqtt.Client(SUBSCRIBER_ID, protocol=mqtt.MQTTv31)
 """ Database Parameters """
-db_name = "apc-iot"
-db_address = "localhost"
-db_port = 27017
-record = "apc_data"
-data = data_access.DataAccess(db_address, db_port)
+DB_NAME = "apc-iot"
+DB_ADDR = "localhost"
+DB_PORT = 27017
+DB_RECORD = "apc_data"
+dataLogic = DataAccess(DB_ADDR, DB_PORT)
 """ Weather API Parameters """
 api_key = weather_access.get_api_key()
-location = "Manila,ph"
+LOCATION = "Manila,ph"
 
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
@@ -27,26 +28,37 @@ def on_connect(client, userdata, flags, rc):
 
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
-    client.subscribe(topic, qos_level)
+    client.subscribe(TOPIC, QOS_LEVEL)
 
 
 # The callback for when a PUBLISH message is received from the server.
 def on_message(client, userdata, message):
     print("Received PUBLISH")
-    # python is incorrectly parsing string, must set right decoder
-    print(message.topic.decode('utf-8') + " " + str(message.payload).decode('utf-8'))
-    if data.is_connection_active:
-        doc = json.loads(str(message.payload))
+    print("TOPIC: " + message.topic)
+    print("Message: " + str(message.payload))
+    if dataLogic.is_connection_active:
+        document = {}
+        try:
+            parser = SensorMessage(message.payload)
+            parser.parse_data()
+
+            document['sink'] = parser.sink
+            document['collectors'] = parser.collectors
+
+        except json.JSONDecodeError:
+            print("ERROR - malformed payload data.")
+            return
         
-        weather = weather_access.get_weather(api_key, location)
+        weather = weather_access.get_weather(api_key, LOCATION)
         if weather is not None:
             weatherList = []
             for weatherInfo in weather:
                 weatherList.append(weatherInfo['main'])
-            doc['weather'] = weatherList;
+            document['weather'] = weatherList
         else:
-            doc['weather'] = [];
-        data.insert_document(record, doc)
+            print("Unable to access weather API")
+            document['weather'] = []
+        dataLogic.insert_document(DB_RECORD, document)
     else:
         print("Database is not active")
 
@@ -59,8 +71,8 @@ def main():
     client.on_connect = on_connect
     client.on_message = on_message
     
-    client.connect(address, mqtt_port, keep_alive_time)
-    data.connect_db(db_name)
+    client.connect(SERVER_ADDR, MQTT_PORT, KEEP_ALIVE_TIME)
+    dataLogic.connect_db(DB_NAME)
     
     # Blocking call that processes network traffic, dispatches callbacks and
     # handles reconnecting.
