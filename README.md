@@ -17,9 +17,10 @@ The following codes written are used to program the motes to read from the senso
 ### Sensors Used
 * DHT22 (Temperature and Humidity)
 * GP2Y1014AU0F (PM2.5)
-* MQ7 (Carbon Monoxide)
+* ~~MQ7 (Carbon Monoxide)~~
 * MQ131 (Ozone)
-* MQ135 (~~Nitrogen Oxides~~/Carbon Dioxide)
+* ~~MQ135 (Nitrogen Oxides/Carbon Dioxide)~~
+* MICS4514 (Nitrogen Dioxide & Carbon Monoxide)
 
 *quantifiable phenomenon are measured*
 
@@ -51,9 +52,18 @@ The following codes written are used to program the motes to read from the senso
 
 You can make use of the mqtt subscriber to make the published data persistent. The subscriber will store the published data locally using MongoDB.
 
-## Other Requirements
+## Running the MQTT Server/Subscriber
+
+	1. Make sure that Mosquitto and MongoDB are properly set up and working
+	2. Add a config.ini with a section [openweathermap] and key, value pair api_key=~your~api~key~here~
+	3. Make necessary changes in mqtt-subscriber variables (mosquitto and mongodb config, ip addresses etc.)
+	4. Run mqtt-subscriber.py
+
+## Software Requirements
 * Mosquitto - for MQTT functionality
-* PyMongo - for storing sensor data persistently
+* MongoDB (64-bit) - for storing sensor data persistently
+* Paho MQTT - module dependency
+* PyMongo - module dependency
 * Python - to run the mqtt subscriber script
 
 Make sure to update the git repo for contiki to avoid any other issues
@@ -68,4 +78,4 @@ From <https://github.com/contiki-os/contiki/issues/2495>
 reference for the correct code
 
 For the actual circuit of the sensor node, refer to the diagram below
-<a href="https://drive.google.com/uc?export=view&id=1KQGYp91lfQ14dhdln3cVewYp078hnnJk"><img src="https://drive.google.com/uc?export=view&id=1KQGYp91lfQ14dhdln3cVewYp078hnnJk" style="width: 500px; max-width: 100%; height: auto" title="Click for the larger version."/></a>
+<a href="https://drive.google.com/uc?export=view&id=1zQjA_jTVKHifyyPVH9N4CGrHCIEI7_Gn"><img src="https://drive.google.com/uc?export=view&id=1zQjA_jTVKHifyyPVH9N4CGrHCIEI7_Gn" style="width: 500px; max-width: 100%; height: auto" title="Click for the larger version."/></a>

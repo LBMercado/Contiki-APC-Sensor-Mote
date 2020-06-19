@@ -386,6 +386,9 @@ read_sensor
 			PRINTF("read_sensor: HUMIDITY_T \n");
 			PRINTF("Humidity %02d.%02d RH\n", value / 10, value % 10);
 			PRINTF("-----------------\n");
+			// reflect values in aqs sensor
+			aqs_humidity =  value / 10;
+
 			return APC_SENSOR_OPSUCCESS;
 		}
 		else {
@@ -412,6 +415,9 @@ read_sensor
 			PRINTF("read_sensor: TEMPERATURE_T \n");
 			PRINTF("Temperature %02d.%02d deg. C\n", value / 10, value % 10);
 			PRINTF("-----------------\n");
+			// reflect values in aqs sensor
+			aqs_temperature =  value;
+
 			return APC_SENSOR_OPSUCCESS;
 		}
 		else {

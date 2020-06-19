@@ -65,8 +65,8 @@ Refer to https://github.com/ultimaterobotics/mq7-co-monitor/blob/master/co_monit
 /*------------------------------------------------------------------*/
 // Resistance ratio boundaries (precision in 3 digits)
 //  used to limit possible values of the sensors
-#define MQ7_RESRATIO_MIN                20
-#define MQ7_RESRATIO_MAX                250
+#define MQ7_RESRATIO_MIN                90
+#define MQ7_RESRATIO_MAX                1750
 #define MQ131_RESRATIO_MIN              1250
 #define MQ131_RESRATIO_MAX              8000
 #define MQ135_RESRATIO_MIN              800
@@ -76,6 +76,38 @@ Refer to https://github.com/ultimaterobotics/mq7-co-monitor/blob/master/co_monit
 #define MICS4514_NOX_RESRATIO_MIN       65
 #define MICS4514_NOX_RESRATIO_MAX       40000
 /*------------------------------------------------------------------*/
+// Temperature compensation boundaries
+// MQ7
+#define MQ7_TEMP_DEP_MIN               -10
+#define MQ7_TEMP_DEP_MAX                50
+#define MQ7_RH_DEP_CURVE_1              33
+#define MQ7_RH_DEP_CURVE_2              88
+#define MQ7_RESRATIO_DEP_1_MAX          1450
+#define MQ7_RESRATIO_DEP_1_MIN          875
+#define MQ7_RESRATIO_DEP_2_MAX          1175
+#define MQ7_RESRATIO_DEP_2_MIN          725
+// MQ131
+#define MQ131_TEMP_DEP_MIN             -10
+#define MQ131_TEMP_DEP_MAX              50
+#define MQ131_RH_DEP_CURVE_1            30
+#define MQ131_RH_DEP_CURVE_2            60
+#define MQ131_RH_DEP_CURVE_3            85
+#define MQ131_RESRATIO_DEP_1_MAX        1700
+#define MQ131_RESRATIO_DEP_1_MIN        890
+#define MQ131_RESRATIO_DEP_2_MAX        1450
+#define MQ131_RESRATIO_DEP_2_MIN        750
+#define MQ131_RESRATIO_DEP_3_MAX        1275
+#define MQ131_RESRATIO_DEP_3_MIN        650
+// MQ135
+#define MQ135_TEMP_DEP_MIN             -10
+#define MQ135_TEMP_DEP_MAX              50
+#define MQ135_RH_DEP_CURVE_1            33
+#define MQ135_RH_DEP_CURVE_2            85
+#define MQ135_RESRATIO_DEP_1_MAX        1700
+#define MQ135_RESRATIO_DEP_1_MIN        900
+#define MQ135_RESRATIO_DEP_2_MAX        1550
+#define MQ135_RESRATIO_DEP_2_MIN        800
+/*------------------------------------------------- -----------------*/
 // Reference resistances (load resistance RL)
 //  used for computing RS
 #ifndef MQ7_CONF_RL_KOHM
@@ -202,6 +234,8 @@ Refer to https://github.com/ultimaterobotics/mq7-co-monitor/blob/master/co_monit
 #endif
 /*------------------------------------------------------------------*/
 extern const struct sensors_sensor aqs_sensor;
+extern int16_t aqs_temperature;
+extern uint8_t aqs_humidity;
 #define AQS_SENSOR "Air Quality Sensor"
 /*------------------------------------------------------------------*/
 #endif /* #ifndef AQS_H_  */
