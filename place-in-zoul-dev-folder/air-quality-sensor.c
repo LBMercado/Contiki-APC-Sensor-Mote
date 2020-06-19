@@ -4,6 +4,7 @@
 #include "dev/zoul-sensors.h"
 #include "dev/adc-sensors.h"
 #include <stdio.h>
+#include <limits.h>
 /*------------------------------------------------------------------*/
 #define MQ7_SENSOR_PIN_MASK                      GPIO_PIN_MASK(MQ7_SENSOR_CTRL_PIN)
 #define MQ131_SENSOR_PIN_MASK                    GPIO_PIN_MASK(MQ131_SENSOR_CTRL_PIN)
@@ -61,6 +62,122 @@ typedef struct {
 static aqs_info_t aqs_info[AQS_SUPPORTED_SENSOR_COUNT];
 static uint8_t event_allocated = 0;
 /*------------------------------------------------------------------*/
+// temperature and humidity compensation values
+int16_t aqs_temperature = -32767; //initial value, reject until set to valid, precision in 1st decimal digit
+uint8_t aqs_humidity = 255; //initial value, reject until set to valid
+//   MQ7 constants
+static const int8_t MQ7_TEMP_DEP_BOUNDARIES[] =
+{
+	MQ7_TEMP_DEP_MIN,
+	5,
+	20,
+	MQ7_TEMP_DEP_MAX
+};
+static const int16_t MQ7_RESRATIO_DEP_BOUNDARIES_1[] =
+{
+	MQ7_RESRATIO_DEP_1_MAX,
+	1125,
+	1000,
+	MQ7_RESRATIO_DEP_1_MIN
+};
+static const int16_t MQ7_RESRATIO_DEP_BOUNDARIES_2[] =
+{
+	MQ7_RESRATIO_DEP_2_MAX,
+	975,
+	850,
+	MQ7_RESRATIO_DEP_2_MIN
+};
+static const uint8_t MQ7_DEP_BOUNDARIES_SIZE = 4;
+//   MQ131 constants
+static const int8_t MQ131_TEMP_DEP_BOUNDARIES[] =
+{
+	MQ131_TEMP_DEP_MIN,
+	-5,
+	0,
+	5,
+	10,
+	15,
+	20,
+	25,
+	30,
+	35,
+	40,
+	45,
+	MQ131_TEMP_DEP_MAX
+};
+static const int16_t MQ131_RESRATIO_DEP_BOUNDARIES_1[] =
+{
+	MQ131_RESRATIO_DEP_1_MAX,
+	1650,
+	1600,
+	1500,
+	1425,
+	1300,
+	1250,
+	1175,
+	1150,
+	1125,
+	1000,
+	925,
+	MQ131_RESRATIO_DEP_1_MIN
+};
+static const int16_t MQ131_RESRATIO_DEP_BOUNDARIES_2[] =
+{
+	MQ131_RESRATIO_DEP_2_MAX,
+	1375,
+	1350,
+	1275,
+	1200,
+	1110,
+	1075,
+	1000,
+	975,
+	950,
+	875,
+	800,
+	MQ131_RESRATIO_DEP_2_MIN
+};
+static const int16_t MQ131_RESRATIO_DEP_BOUNDARIES_3[] =
+{
+	MQ131_RESRATIO_DEP_2_MAX,
+	1200,
+	1175,
+	1100,
+	1075,
+	975,
+	925,
+	875,
+	850,
+	825,
+	725,
+	675,
+	MQ131_RESRATIO_DEP_2_MIN
+};
+static uint8_t MQ131_DEP_BOUNDARIES_SIZE = 13;
+//   MQ135 constants
+static const int8_t MQ135_TEMP_DEP_BOUNDARIES[] =
+{
+		MQ135_TEMP_DEP_MIN,
+		5,
+		20,
+		MQ135_TEMP_DEP_MAX
+};
+static const int16_t MQ135_RESRATIO_DEP_BOUNDARIES_1[] =
+{
+		MQ135_RESRATIO_DEP_1_MAX,
+		1225,
+		1000,
+		MQ135_RESRATIO_DEP_1_MIN
+};
+static const int16_t MQ135_RESRATIO_DEP_BOUNDARIES_2[] =
+{
+		MQ135_RESRATIO_DEP_2_MAX,
+		1175,
+		925,
+		MQ135_RESRATIO_DEP_2_MIN
+};
+static const uint8_t MQ135_DEP_BOUNDARIES_SIZE = 4;
+/*------------------------------------------------------------------*/
 static void
 allocate_calibrate_event()
 {
@@ -70,6 +187,126 @@ allocate_calibrate_event()
 		calibration_finished_event = process_alloc_event();
 		event_allocated = 1;
 	}
+}
+/*------------------------------------------------------------------*/
+static uint32_t get_linear_function_value(int16_t y_comp_0, int16_t y_comp_1, int16_t x_comp_0, int16_t x_comp_1, float x_value)
+{
+	return (uint32_t)(y_comp_0 + (( y_comp_1 -  y_comp_0) / (float)( x_comp_1 - x_comp_0 )) * ( x_value - x_comp_0 ));
+}
+/*------------------------------------------------------------------*/
+/* Compensates for environment temperature (temp) and humidity (hum)
+ * by multiplying a factor to the computed resistance ratio (res_ratio)
+ * Note: res_ratio values that lie outside the maxima and minima are extrapolated
+ * @param: temp = temperature in current environment, precision in 1st decimal digit in fixed-point
+ * @param: humidity = relative humidity in current environment
+ * @param res_ratio: computed resistance ratio
+ * @returns: temperature-compensated resistance ratio
+ * */
+static uint32_t environment_compensate(int16_t temp, uint8_t hum, uint16_t res_ratio, const uint8_t type)
+{
+	float true_temp = temp / 10.0;
+	uint8_t max_index;
+	switch(type){
+		case MQ7_SENSOR:
+			max_index = MQ7_DEP_BOUNDARIES_SIZE - 1;
+			// make sure that temperature falls within boundary
+			if (true_temp < MQ7_TEMP_DEP_MIN || true_temp > MQ7_TEMP_DEP_MAX) {
+				PRINTF("environment_compensate: WARNING - temperature falls outside boundaries. Return uncompensated value.\n");
+				return res_ratio;
+			}
+			if ( hum > (MQ7_RH_DEP_CURVE_1 + MQ7_RH_DEP_CURVE_2) / 2) {
+				for (uint8_t index = 0; index < MQ7_DEP_BOUNDARIES_SIZE; index++){
+					if (res_ratio + RESRATIO_TOLERANCE <= MQ7_RESRATIO_DEP_BOUNDARIES_2[max_index - index])
+						return get_linear_function_value(MQ7_RESRATIO_DEP_BOUNDARIES_2[max_index - index],
+								MQ7_RESRATIO_DEP_BOUNDARIES_2[max_index - index + 1],
+								MQ7_TEMP_DEP_BOUNDARIES[max_index - index],
+								MQ7_TEMP_DEP_BOUNDARIES[max_index - index + 1],
+								true_temp) * res_ratio / 1000;
+				}
+			}
+			else {
+				for (uint8_t index = 0; index < MQ7_DEP_BOUNDARIES_SIZE; index++){
+					if (res_ratio + RESRATIO_TOLERANCE <= MQ7_RESRATIO_DEP_BOUNDARIES_1[max_index - index])
+						return get_linear_function_value(MQ7_RESRATIO_DEP_BOUNDARIES_1[max_index - index],
+								MQ7_RESRATIO_DEP_BOUNDARIES_1[max_index - index + 1],
+								MQ7_TEMP_DEP_BOUNDARIES[max_index - index],
+								MQ7_TEMP_DEP_BOUNDARIES[max_index - index + 1],
+								true_temp) * res_ratio / 1000;
+				}
+			}
+			break;
+		case MQ131_SENSOR:
+			max_index = MQ131_DEP_BOUNDARIES_SIZE - 1;
+			// make sure that temperature falls within boundary
+			if (true_temp < MQ131_TEMP_DEP_MIN || true_temp > MQ131_TEMP_DEP_MAX) {
+				PRINTF("environment_compensate: WARNING - temperature falls outside boundaries. Return uncompensated value.\n");
+				return res_ratio;
+			}
+			if ( hum <= (MQ131_RH_DEP_CURVE_1 + MQ131_RH_DEP_CURVE_2) / 2) {
+				for (uint8_t index = 0; index < MQ131_DEP_BOUNDARIES_SIZE; index++){
+					if (res_ratio + RESRATIO_TOLERANCE <= MQ131_RESRATIO_DEP_BOUNDARIES_1[max_index - index])
+						return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_1[max_index - index],
+								MQ131_RESRATIO_DEP_BOUNDARIES_1[max_index - index + 1],
+								MQ131_TEMP_DEP_BOUNDARIES[max_index - index],
+								MQ131_TEMP_DEP_BOUNDARIES[max_index - index + 1],
+								true_temp) * res_ratio / 1000;
+				}
+			}
+			else if (hum < (MQ131_RH_DEP_CURVE_2 + MQ131_RH_DEP_CURVE_3) / 2) {
+				for (uint8_t index = 0; index < MQ131_DEP_BOUNDARIES_SIZE; index++){
+					if (res_ratio + RESRATIO_TOLERANCE <= MQ131_RESRATIO_DEP_BOUNDARIES_2[max_index - index])
+						return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_2[max_index - index],
+								MQ131_RESRATIO_DEP_BOUNDARIES_2[max_index - index + 1],
+								MQ131_TEMP_DEP_BOUNDARIES[max_index - index],
+								MQ131_TEMP_DEP_BOUNDARIES[max_index - index + 1],
+								true_temp) * res_ratio / 1000;
+				}
+			}
+			else{
+				for (uint8_t index = 0; index < MQ131_DEP_BOUNDARIES_SIZE; index++){
+					if (res_ratio + RESRATIO_TOLERANCE <= MQ131_RESRATIO_DEP_BOUNDARIES_3[max_index - index])
+						return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_3[max_index - index],
+								MQ131_RESRATIO_DEP_BOUNDARIES_3[max_index - index + 1],
+								MQ131_TEMP_DEP_BOUNDARIES[max_index - index],
+								MQ131_TEMP_DEP_BOUNDARIES[max_index - index + 1],
+								true_temp) * res_ratio / 1000;
+				}
+			}
+			break;
+		case MQ135_SENSOR:
+			max_index = MQ135_DEP_BOUNDARIES_SIZE - 1;
+			// make sure that temperature falls within boundary
+			if (true_temp < MQ135_TEMP_DEP_MIN || true_temp > MQ135_TEMP_DEP_MAX) {
+				PRINTF("environment_compensate: WARNING - temperature falls outside boundaries. Return uncompensated value.\n");
+				return res_ratio;
+			}
+			if ( hum <= (MQ135_RH_DEP_CURVE_1 + MQ135_RH_DEP_CURVE_2) / 2) {
+				for (uint8_t index = 0; index < MQ135_DEP_BOUNDARIES_SIZE; index++){
+					if (res_ratio + RESRATIO_TOLERANCE <= MQ135_RESRATIO_DEP_BOUNDARIES_1[max_index - index])
+						return get_linear_function_value(MQ135_RESRATIO_DEP_BOUNDARIES_1[max_index - index],
+								MQ135_RESRATIO_DEP_BOUNDARIES_1[max_index - index + 1],
+								MQ135_TEMP_DEP_BOUNDARIES[max_index - index],
+								MQ135_TEMP_DEP_BOUNDARIES[max_index - index + 1],
+								true_temp) * res_ratio / 1000;
+				}
+			}
+			else {
+				for (uint8_t index = 0; index < MQ135_DEP_BOUNDARIES_SIZE; index++){
+					if (res_ratio + RESRATIO_TOLERANCE <= MQ135_RESRATIO_DEP_BOUNDARIES_2[max_index - index])
+						return get_linear_function_value(MQ135_RESRATIO_DEP_BOUNDARIES_2[max_index - index],
+								MQ135_RESRATIO_DEP_BOUNDARIES_2[max_index - index + 1],
+								MQ135_TEMP_DEP_BOUNDARIES[max_index - index],
+								MQ135_TEMP_DEP_BOUNDARIES[max_index - index + 1],
+								true_temp) * res_ratio / 1000;
+				}
+			}
+			break;
+		default:
+			PRINTF("environment_compensate: ERROR - invalid type specified. Return uncompensated value.\n");
+			return res_ratio;
+	}
+	PRINTF("environment_compensate: ERROR - Unknown error encountered. Return uncompensated value.\n");
+	return res_ratio;
 }
 /*------------------------------------------------------------------*/
 /*
@@ -308,6 +545,11 @@ measure_aqs(const void* data_ptr)
 
 	//normalize to expected values
 	aqs_info[aqs_info_data->sensorType].value = normalize_resratio(aqs_info[aqs_info_data->sensorType].value, aqs_info_data->sensorType);
+
+	//compensate the measured value based on environment temperature/humidity (if properly set)
+	if (aqs_temperature != -32767 && aqs_humidity != 255)
+		aqs_info[aqs_info_data->sensorType].value = environment_compensate(aqs_temperature, aqs_humidity, aqs_info[aqs_info_data->sensorType].value,
+				aqs_info_data->sensorType);
 
 	PRINTF("measure_aqs: sensor(0x%02x) Rs/Ro value = %u.%03u\n", aqs_info_data->sensorType,
 		(uint16_t)aqs_info[aqs_info_data->sensorType].value / 1000, 
