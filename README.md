@@ -55,7 +55,7 @@ You can make use of the mqtt subscriber to make the published data persistent. T
 ## Running the MQTT Server/Subscriber
 
 	1. Make sure that Mosquitto and MongoDB are properly set up and working
-	2. Add a config.ini with a section [openweathermap] and key, value pair api_key=~your~api~key~here~
+	2. Rename distribution config.ini to actual .ini file; add your openweather API key there.
 	3. Make necessary changes in mqtt-subscriber variables (mosquitto and mongodb config, ip addresses etc.)
 	4. Run mqtt-subscriber.py
 
