@@ -562,7 +562,7 @@ pub_sensor_data
 			remaining -= len;
 			buf_ptr += len;
 			//Humidity
-			len = snprintf(buf_ptr, remaining, ",\"Humidity (%RH)\":%s",
+			len = snprintf(buf_ptr, remaining, ",\"Humidity (%%RH)\":%s",
 			strcmp(n->humidity,"") ? n->humidity : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
@@ -635,7 +635,7 @@ pub_sensor_data
 
 			//CO calibration value
 			len = snprintf(buf_ptr, remaining, "{\"CO Rs (Ohms)\":%s},",
-					strcmp(n->CO_RO,"") ? n->CO_RO : "-1");
+					strcmp(n->CO_RO, "") ? n->CO_RO : "-1");
 			if(len < 0 || len >= remaining) {
 				printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
 				return;

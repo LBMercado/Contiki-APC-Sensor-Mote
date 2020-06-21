@@ -153,12 +153,10 @@ update_sensor_node_reading(const uip_ipaddr_t* nodeAddress, sensor_reading_t* re
 	struct sensor_node *n;
 	//get the associated sensor node of this address
 	if(list_length(sensor_nodes_list) > 0) {
-		int i;
 		n = list_head(sensor_nodes_list);
-		for(i = 0; i < list_length(sensor_nodes_list); i++) {
-			//break when matching address is found
+		while (n != NULL) {
 			if (uip_ipaddr_cmp(&n->addr, nodeAddress))
-			break;
+				break;
 			n = list_item_next(n);
 		}
 		

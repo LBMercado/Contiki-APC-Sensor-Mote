@@ -106,7 +106,7 @@ typedef struct{
 	uint8_t sensorType;
 	uint8_t isCalibrated; //used only during calibration procedures
 	char sensor_reading[8];
-	char sensor_calib_reading[8]; //used only for read_calib_sensor
+	char sensor_calib_reading[10]; //used only for read_calib_sensor
 } sensor_info_t;
 /*----------------------------------------------------------------------------------*/
 static sensor_info_t sensor_infos[SENSOR_COUNT];
@@ -236,7 +236,7 @@ static int
 read_calib_sensor
 (uint8_t sensorType){
 	uint8_t index = get_index_from_sensor_type(sensorType);
-	int value;
+	int64_t value;
 
 	if (index == APC_SENSOR_OPFAILURE){
 		PRINTF("read_calib_sensor: ERROR - invalid sensor type specified. \n");
@@ -246,7 +246,7 @@ read_calib_sensor
 
 	switch(calibType){
 		case CO_RO_T:
-			value = aqs_sensor.value(MICS4514_SENSOR_RED_RO);
+			value = aqs_value(MICS4514_SENSOR_RED_RO);
 			if (value == AQS_ERROR){
 				PRINTF("-----------------\n");
 				PRINTF("read_sensor: CO_RO_T \n");
@@ -264,13 +264,13 @@ read_calib_sensor
 			else {
 				sensor_infos[index].isCalibrated = 1;
 				sprintf(sensor_infos[index].sensor_calib_reading,
-				"%d.%03d",
+				"%lld.%03lld",
 				value / 1000,
 				value % 1000
 				);
 				PRINTF("-----------------\n");
 				PRINTF("read_sensor: CO_RO_T \n");
-				PRINTF("RO: %d.%03d\n",
+				PRINTF("RO: %lld.%03lld\n",
 					value / 1000,
 					value % 1000);
 				PRINTF("-----------------\n");
@@ -279,7 +279,7 @@ read_calib_sensor
 
 			break;
 		case NO2_RO_T:
-			value = aqs_sensor.value(MICS4514_SENSOR_NOX_RO);
+			value = aqs_value(MICS4514_SENSOR_NOX_RO);
 			if (value == AQS_ERROR){
 				PRINTF("-----------------\n");
 				PRINTF("read_sensor: NO2_RO_T \n");
@@ -297,13 +297,13 @@ read_calib_sensor
 			else {
 				sensor_infos[index].isCalibrated = 1;
 				sprintf(sensor_infos[index].sensor_calib_reading,
-				"%d.%03d",
+				"%lld.%03lld",
 				value / 1000,
 				value % 1000
 				);
 				PRINTF("-----------------\n");
 				PRINTF("read_sensor: NO2_RO_T \n");
-				PRINTF("RO: %d.%03d\n",
+				PRINTF("RO: %lld.%03lld\n",
 					value / 1000,
 					value % 1000);
 				PRINTF("-----------------\n");
@@ -312,7 +312,7 @@ read_calib_sensor
 
 			break;
 		case O3_RO_T:
-			value = aqs_sensor.value(MQ131_SENSOR_RO);
+			value = aqs_value(MQ131_SENSOR_RO);
 			if (value == AQS_ERROR){
 				PRINTF("-----------------\n");
 				PRINTF("read_sensor: O3_RO_T \n");
@@ -330,13 +330,13 @@ read_calib_sensor
 			else {
 				sensor_infos[index].isCalibrated = 1;
 				sprintf(sensor_infos[index].sensor_calib_reading,
-				"%d.%03d",
+				"%lld.%03lld",
 				value / 1000,
 				value % 1000
 				);
 				PRINTF("-----------------\n");
 				PRINTF("read_sensor: O3_RO_T \n");
-				PRINTF("RO: %d.%03d\n",
+				PRINTF("RO: %lld.%03lld\n",
 					value / 1000,
 					value % 1000);
 				PRINTF("-----------------\n");
@@ -451,7 +451,7 @@ read_sensor
 		}
 		break;
 	case CO_T:
-		value = aqs_sensor.value(MICS4514_SENSOR_RED);
+		value = aqs_value(MICS4514_SENSOR_RED);
 		if (value == AQS_ERROR){
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: CO_T \n");
@@ -482,7 +482,7 @@ read_sensor
 		}
 		break;
 	case NO2_T:
-		value = aqs_sensor.value(MICS4514_SENSOR_NOX);
+		value = aqs_value(MICS4514_SENSOR_NOX);
 		if (value == AQS_ERROR){
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: NO2_T \n");
@@ -513,7 +513,7 @@ read_sensor
 		}
 		break;
 	case O3_T:
-		value = aqs_sensor.value(MQ131_SENSOR);
+		value = aqs_value(MQ131_SENSOR);
 		if (value == AQS_ERROR){
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: O3_T \n");
@@ -996,9 +996,9 @@ PROCESS_THREAD(apc_sensor_node_collect_gather_process, ev, data)
 		if (read_calib_sensors_count != SENSOR_CALIB_COUNT){
 			for (index = 0; index < SENSOR_CALIB_COUNT; index++){
 				int sensorType = map_calib_to_sensor_type(SENSOR_CALIB_TYPES[index]);
-				int is_calibrated = is_calibrated_sensor(sensorType);
-
-				if ( !is_calibrated ) {
+				PRINTF(apc_sensor_node_collect_gather_process.name);
+				PRINTF(": Calibration type: 0x%02x\n", sensorType);
+				if ( !is_calibrated_sensor(sensorType) ) {
 
 					if (read_calib_sensor(sensorType) == APC_SENSOR_OPSUCCESS)
 						read_calib_sensors_count++;

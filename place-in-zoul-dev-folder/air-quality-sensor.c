@@ -56,7 +56,7 @@ typedef struct{
 } measure_aqs_data_t;
 typedef struct {
   uint8_t state; //sensor status
-  uint32_t value; //resratio equivalent of sensor output, precision in 3 decimal digits
+  uint64_t value; //resratio equivalent of sensor output, precision in 3 decimal digits
   uint32_t ro; //(in milliohms), sensor resistance in clean air
 } aqs_info_t;
 static aqs_info_t aqs_info[AQS_SUPPORTED_SENSOR_COUNT];
@@ -202,7 +202,7 @@ static uint32_t get_linear_function_value(int16_t y_comp_0, int16_t y_comp_1, in
  * @param res_ratio: computed resistance ratio
  * @returns: temperature-compensated resistance ratio
  * */
-static uint32_t environment_compensate(int16_t temp, uint8_t hum, uint16_t res_ratio, const uint8_t type)
+static uint32_t environment_compensate(int16_t temp, uint8_t hum, uint32_t res_ratio, const uint8_t type)
 {
 	float true_temp = temp / 10.0;
 	uint8_t max_index;
@@ -391,47 +391,45 @@ convert_raw_to_sensor_res(const uint8_t type, uint32_t value)
 /*------------------------------------------------------------------*/
 static uint32_t
 normalize_resratio(const uint32_t resratio, const uint8_t type){
-	uint32_t val = 0;
-
 	switch(type){
 		case MQ7_SENSOR:
 			if (resratio + RESRATIO_TOLERANCE > MQ7_RESRATIO_MAX)
-				val = MQ7_RESRATIO_MAX;
+				return MQ7_RESRATIO_MAX;
 			else if (resratio - RESRATIO_TOLERANCE < MQ7_RESRATIO_MIN)
-				val = MQ7_RESRATIO_MIN;
-			return val;
+				return MQ7_RESRATIO_MIN;
+			return resratio;
 			break;
 		case MQ131_SENSOR:
 			if (resratio + RESRATIO_TOLERANCE > MQ131_RESRATIO_MAX)
-				val = MQ131_RESRATIO_MAX;
+				return MQ131_RESRATIO_MAX;
 			else if (resratio - RESRATIO_TOLERANCE < MQ131_RESRATIO_MIN)
-				val = MQ131_RESRATIO_MIN;
-			return val;
+				return MQ131_RESRATIO_MIN;
+			return resratio;
 			break;
 		case MQ135_SENSOR:
 			if (resratio + RESRATIO_TOLERANCE > MQ135_RESRATIO_MAX)
-				val = MQ135_RESRATIO_MAX;
+				return MQ135_RESRATIO_MAX;
 			else if (resratio - RESRATIO_TOLERANCE < MQ135_RESRATIO_MIN)
-				val = MQ135_RESRATIO_MIN;
-			return val;
+				return MQ135_RESRATIO_MIN;
+			return resratio;
 			break;
 		case MICS4514_SENSOR_RED:
 			if (resratio + RESRATIO_TOLERANCE > MICS4514_RED_RESRATIO_MAX)
-				val = MICS4514_RED_RESRATIO_MAX;
+				return MICS4514_RED_RESRATIO_MAX;
 			else if (resratio - RESRATIO_TOLERANCE < MICS4514_RED_RESRATIO_MIN)
-				val = MICS4514_RED_RESRATIO_MIN;
-			return val;
+				return MICS4514_RED_RESRATIO_MIN;
+			return resratio;
 			break;
 		case MICS4514_SENSOR_NOX:
 			if (resratio + RESRATIO_TOLERANCE > MICS4514_NOX_RESRATIO_MAX)
-				val = MICS4514_NOX_RESRATIO_MAX;
+				return MICS4514_NOX_RESRATIO_MAX;
 			else if (resratio - RESRATIO_TOLERANCE < MICS4514_NOX_RESRATIO_MIN)
-				val = MICS4514_NOX_RESRATIO_MIN;
-			return val;
+				return MICS4514_NOX_RESRATIO_MIN;
+			return resratio;
 			break;
 		default:
 			PRINTF("normalize_resratio: Invalid parameter \"type\" with value %hhu \n", type);
-			return val;
+			return resratio;
 	}
 }
 /*------------------------------------------------------------------*/
@@ -491,7 +489,7 @@ static void
 measure_aqs(const void* data_ptr)
 {
 	measure_aqs_data_t* aqs_info_data;
-	uint32_t val;
+	uint64_t val;
 	
 	aqs_info_data = (measure_aqs_data_t*)(data_ptr);
 	
@@ -530,30 +528,47 @@ measure_aqs(const void* data_ptr)
 		return;
 	}
 	
-	PRINTF("measure_aqs: sensor(0x%02x) raw ADC value = %lu\n", aqs_info_data->sensorType, val);
+	PRINTF("measure_aqs: sensor(0x%02x) raw ADC value = %llu\n", aqs_info_data->sensorType, val);
 	
 	/* 512 bit resolution, output is in mV already (significant to the tenth decimal place) */
 	/* convert 3v ref to 5v ref */
 	val *= AQS_ADC_REF;
 	val /= AQS_ADC_CROSSREF;
 
-	PRINTF("measure_aqs: sensor(0x%02x) mv ADC value = %lu.%lu\n", aqs_info_data->sensorType, val / 10, val % 10);
+	PRINTF("measure_aqs: sensor(0x%02x) mv ADC value = %llu.%llu\n", aqs_info_data->sensorType, val / 10, val % 10);
 	
+	PRINTF("measure_aqs: sensor(0x%02x) reference Ro = %lu.%lu\n",
+			aqs_info_data->sensorType,
+			aqs_info[aqs_info_data->sensorType].ro / 1000,
+			aqs_info[aqs_info_data->sensorType].ro % 1000);
+
+	val = convert_raw_to_sensor_res(aqs_info_data->sensorType, val);
+
+	PRINTF("measure_aqs: sensor(0x%02x) Rs = %llu.%llu\n",
+			aqs_info_data->sensorType,
+			val / 1000,
+			val % 1000);
 	//get resistance ratio at this time, precision in 3 decimal digits
-	aqs_info[aqs_info_data->sensorType].value = convert_raw_to_sensor_res(aqs_info_data->sensorType, val) * 1000;
+	aqs_info[aqs_info_data->sensorType].value = val * 1000;
+	PRINTF("measure_aqs: sensor(0x%02x) value = %llu\n",
+			aqs_info_data->sensorType,
+			aqs_info[aqs_info_data->sensorType].value);
 	aqs_info[aqs_info_data->sensorType].value /= aqs_info[aqs_info_data->sensorType].ro;
 
 	//normalize to expected values
 	aqs_info[aqs_info_data->sensorType].value = normalize_resratio(aqs_info[aqs_info_data->sensorType].value, aqs_info_data->sensorType);
+	PRINTF("measure_aqs: sensor(0x%02x) Rs/Ro value (unnormalized) = %llu.%03llu\n", aqs_info_data->sensorType,
+			aqs_info[aqs_info_data->sensorType].value / 1000,
+			aqs_info[aqs_info_data->sensorType].value % 1000);
 
 	//compensate the measured value based on environment temperature/humidity (if properly set)
 	if (aqs_temperature != -32767 && aqs_humidity != 255)
 		aqs_info[aqs_info_data->sensorType].value = environment_compensate(aqs_temperature, aqs_humidity, aqs_info[aqs_info_data->sensorType].value,
 				aqs_info_data->sensorType);
 
-	PRINTF("measure_aqs: sensor(0x%02x) Rs/Ro value = %u.%03u\n", aqs_info_data->sensorType,
-		(uint16_t)aqs_info[aqs_info_data->sensorType].value / 1000, 
-		(uint16_t)( ((float)aqs_info[aqs_info_data->sensorType].value / 1000) - ((uint16_t)aqs_info[aqs_info_data->sensorType].value / 1000) ) * 1000);
+	PRINTF("measure_aqs: sensor(0x%02x) Rs/Ro value (normalized) = %llu.%03llu\n", aqs_info_data->sensorType,
+		aqs_info[aqs_info_data->sensorType].value / 1000,
+		aqs_info[aqs_info_data->sensorType].value % 1000);
 	aqs_info[aqs_info_data->sensorType].state = AQS_ENABLED;
 	PRINTF("measure_aqs: sensor(0x%02x) set to ENABLED.\n", aqs_info_data->sensorType);
 }
@@ -808,6 +823,61 @@ value(int type)
 	}
 
 	
+	switch(aqs_info[sensorType].state){
+		case AQS_DISABLED:
+			PRINTF("AQS value function: ERROR - sensor is disabled.\n");
+			return AQS_ERROR;
+		case AQS_INIT_PHASE:
+			PRINTF("AQS value function: ERROR - sensor is initializing.\n");
+			return AQS_INITIALIZING;
+		case AQS_BUSY:
+			PRINTF("AQS value function: WARNING - sensor is busy. Measured value may be obsolete.\n");
+		case AQS_ENABLED:
+		default:
+			if (type == MQ7_SENSOR_RO ||
+					type == MQ131_SENSOR_RO ||
+					type == MQ135_SENSOR_RO ||
+					type == MICS4514_SENSOR_NOX_RO ||
+					type == MICS4514_SENSOR_RED_RO)
+				return aqs_info[sensorType].ro;
+			else
+				return aqs_info[sensorType].value;
+	}
+}
+/*------------------------------------------------------------------*/
+/*
+ * Recommended to use this over the internal value function of the sensor.
+ * @param: type = type of sensor to get a reading from
+ * @returns: int64_t output value from the sensor
+ * */
+int64_t
+aqs_value(int type)
+{
+	/* make sure it is a valid sensor type */
+	if ( type != MQ7_SENSOR &&
+			type != MQ131_SENSOR &&
+			type != MQ135_SENSOR &&
+			type != MQ7_SENSOR_RO &&
+			type != MICS4514_SENSOR_RED &&
+			type != MICS4514_SENSOR_NOX &&
+			type != MQ131_SENSOR_RO &&
+			type != MQ135_SENSOR_RO &&
+			type != MICS4514_SENSOR_NOX_RO &&
+			type != MICS4514_SENSOR_RED_RO){
+		PRINTF("AQS value function: ERROR - unexpected sensor type.\n");
+		return AQS_ERROR;
+	}
+	int sensorType = type;
+	/* must map to standard type if specific type */
+	if (type == MQ7_SENSOR_RO ||
+			type == MQ131_SENSOR_RO ||
+			type == MQ135_SENSOR_RO ||
+			type == MICS4514_SENSOR_NOX_RO ||
+			type == MICS4514_SENSOR_RED_RO){
+		sensorType = map_spec_type_to_generic_type(sensorType);
+	}
+
+
 	switch(aqs_info[sensorType].state){
 		case AQS_DISABLED:
 			PRINTF("AQS value function: ERROR - sensor is disabled.\n");

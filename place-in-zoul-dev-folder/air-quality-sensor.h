@@ -234,6 +234,7 @@ Refer to https://github.com/ultimaterobotics/mq7-co-monitor/blob/master/co_monit
 #endif
 /*------------------------------------------------------------------*/
 extern const struct sensors_sensor aqs_sensor;
+int64_t aqs_value(int type);
 extern int16_t aqs_temperature;
 extern uint8_t aqs_humidity;
 #define AQS_SENSOR "Air Quality Sensor"

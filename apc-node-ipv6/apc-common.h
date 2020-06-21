@@ -52,7 +52,7 @@ typedef enum
 /*---------------------------------------------------------*/
 typedef struct {
 	uint8_t type;
-	char data[8];
+	char data[10];
 } sensor_reading_t;
 /*---------------------------------------------------------*/
 typedef struct {
@@ -80,14 +80,14 @@ typedef struct sensor_node {
 	char temperature[8]; //unit in Deg. Celsius
 	char humidity[8];    //unit in %RH (0%-100%)
 	char PM25[8];        //unit in ug/m3
-	char CO[8];          //unitless, raw resistance ratio to compute ppm
-	char NO2[8];         //unitless, raw resistance ratio to compute ppm
-	char O3[8];          //unitless, raw resistance ratio to compute ppm
+	char CO[9];          //unitless, raw resistance ratio to compute ppm
+	char NO2[9];         //unitless, raw resistance ratio to compute ppm
+	char O3[9];          //unitless, raw resistance ratio to compute ppm
 	char windSpeed[8];   //unit in m/s
-	char windDir[2];     //may be N, S, E, W and their combinations (NW, NE, SW, SE)
-	char CO_RO[8];       //base resistance of sensor in ohms, sf. in 3 decimal digits
-	char NO2_RO[8];       //base resistance of sensor in ohms, sf. in 3 decimal digits
-	char O3_RO[8];       //base resistance of sensor in ohms, sf. in 3 decimal digits
+	char windDir[3];     //may be N, S, E, W and their combinations (NW, NE, SW, SE)
+	char CO_RO[10];       //base resistance of sensor in ohms, sf. in 3 decimal digits
+	char NO2_RO[10];       //base resistance of sensor in ohms, sf. in 3 decimal digits
+	char O3_RO[10];       //base resistance of sensor in ohms, sf. in 3 decimal digits
 } sensor_node_t;
 /*---------------------------------------------------------*/
 void
