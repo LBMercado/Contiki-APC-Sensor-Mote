@@ -63,15 +63,14 @@
 #define APC_SENSOR_NODE_AMUX_0BIT_PORT_CONF      GPIO_D_NUM
 #define APC_SENSOR_NODE_AMUX_0BIT_PIN_CONF       1
 
-#define SHARED_SENSOR_MAX_SHARABLE_SENSORS_CONF  2
 #define SHARED_SENSOR_MAX_SELECT_LINES_CONF      1
 
 /* reference resistances measured on clean air
  * set to zero to force calibration
 */
-#define MQ131_CONF_RO_CLEAN_AIR         0
-#define MICS4514_NOX_CONF_RO_CLEAN_AIR  0
-#define MICS4514_RED_CONF_RO_CLEAN_AIR  0
+#define MQ131_CONF_RO_CLEAN_AIR         126.008
+#define MICS4514_NOX_CONF_RO_CLEAN_AIR  7837.214
+#define MICS4514_RED_CONF_RO_CLEAN_AIR  25277.013
 
 /* load resistances for forming the voltage divider in measuring
  * sensor output

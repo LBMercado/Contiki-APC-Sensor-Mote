@@ -28,6 +28,8 @@
 	#define PRINTF(...)
 #endif
 /* --------------------------------------------- */
+#define SHARED_SENSOR_LIMIT             8
+/* --------------------------------------------- */
 static uint32_t select_port_base[3];
 static uint32_t select_pin_mask[3];
 /* --------------------------------------------- */
@@ -39,17 +41,12 @@ typedef struct shared_sensor {
 	const struct sensors_sensor *sensor;
 } shared_sensor_t;
 /* --------------------------------------------- */
-MEMB(shared_sensors_memb, shared_sensor_t, SHARED_SENSOR_MAX_SHARABLE_SENSORS);
+MEMB(shared_sensors_memb, shared_sensor_t, SHARED_SENSOR_LIMIT);
 LIST(shared_sensors_list);
-/* --------------------------------------------- */
-enum SHARED_SENSOR_TYPE shared_sensor_type[SHARED_SENSOR_MAX_SHARABLE_SENSORS] = {
-		SHARED_ANEM_DIRECTION,
-		SHARED_ANEM_SPEED
-};
 /* --------------------------------------------- */
 // 3-bit select pin for 74HC4051
 static uint8_t select_pin_count = 0;
-static uint8_t sharable_sensor_count = 0;
+uint8_t SHARED_SENSOR_MAX_SHARABLE_SENSORS = 0;
 /* --------------------------------------------- */
 void shared_sensor_init(uint8_t select_count){
 	if (select_count > SHARED_SENSOR_MAX_SELECT_LINES) {
@@ -61,19 +58,21 @@ void shared_sensor_init(uint8_t select_count){
 	memb_init(&shared_sensors_memb);
 	list_init(shared_sensors_list);
 
-	sharable_sensor_count = 2;
+	SHARED_SENSOR_MAX_SHARABLE_SENSORS = 2;
 	if (select_pin_count > 1)
 		for (int i = 0; i < select_pin_count - 1; i++) {
-			sharable_sensor_count *= 2;
+			SHARED_SENSOR_MAX_SHARABLE_SENSORS *= 2;
 		}
+	if (SHARED_SENSOR_MAX_SHARABLE_SENSORS > SHARED_SENSOR_LIMIT)
+		PRINTF("WARNING! Sensor count exceeds max limit of possible sharable sensors.\n");
 
-	PRINTF("Sharable Sensor Count: %u\n", sharable_sensor_count);
-	for (int i = 0; i < sharable_sensor_count; i++) {
+	PRINTF("Sharable Sensor Count: %u\n", SHARED_SENSOR_MAX_SHARABLE_SENSORS);
+	for (int i = 0; i < SHARED_SENSOR_MAX_SHARABLE_SENSORS; i++) {
 		shared_sensor_t *sensor;
 
 		sensor = memb_alloc(&shared_sensors_memb);
 		if(sensor == NULL) {
-			PRINTF("Failed to allocate memory for entry.\n");
+			PRINTF("shared_sensor_init: Failed to allocate memory for entry.\n");
 			continue;
 		}
 
@@ -98,11 +97,11 @@ void shared_sensor_init(uint8_t select_count){
  * */
 shared_sensor_result shared_sensor_configure_select_pin(uint8_t bit, uint8_t pin, uint8_t port){
 	if (select_pin_count == 0) {
-		PRINTF("Failed to configure select pin. Shared sensor is not initialized.\n");
+		PRINTF("shared_sensor_configure_select_pin: Failed to configure select pin. Shared sensor is not initialized.\n");
 		return SHARED_SENSOR_FAIL;
 	}
 	if (bit > select_pin_count - 1) {
-		PRINTF("Failed to configure select pin. Argument \'bit\' out of bounds.\n");
+		PRINTF("shared_sensor_configure_select_pin: Failed to configure select pin. Argument \'bit\' out of bounds.\n");
 		return SHARED_SENSOR_FAIL;
 	}
 	select_port_base[bit] = GPIO_PORT_TO_BASE(port);
@@ -119,26 +118,24 @@ shared_sensor_result shared_sensor_share_pin(const struct sensors_sensor *sensor
 	shared_sensor_t *n;
 
 	if (select_pin_count == 0) {
-		PRINTF("Failed to add sensor. Shared sensor is not initialized.\n");
+		PRINTF("shared_sensor_share_pin: Failed to add sensor. Shared sensor is not initialized.\n");
 		return SHARED_SENSOR_FAIL;
 	}
 
-	PRINTF("accessing shared sensor list: length = %hu\n", list_length(shared_sensors_list));
 	for(n = list_head(shared_sensors_list); n != NULL; n = list_item_next(n)) {
-		PRINTF("Searching shared sensor for pin %hu, current pin = %hu\n", select_pin, n->select_pin);
 		if(n->select_pin == select_pin) {
 			n->sensor = sensor;
-			PRINTF("Shared sensor assigned: pin = %hu\n", n->select_pin);
+			PRINTF("shared_sensor_share_pin: Shared sensor assigned: pin = %hu\n", n->select_pin);
 			return SHARED_SENSOR_SUCCESS;
 		}
 	}
 
-	PRINTF("Failed to add sensor, argument \'select_pin\' does not exist.\n");
+	PRINTF("shared_sensor_share_pin: Failed to add sensor, argument \'select_pin\' exceeds maximum select line.\n");
 	return SHARED_SENSOR_FAIL;
 }
 /* --------------------------------------------- */
 static void drive_select_line(uint8_t select_line){
-	if (select_line > sharable_sensor_count - 1){
+	if (select_line > SHARED_SENSOR_MAX_SHARABLE_SENSORS - 1){
 		PRINTF("WARNING! Cannot drive select line that does not exist.\n");
 		return;
 	}
@@ -186,6 +183,10 @@ shared_sensor_result shared_sensor_unshare_sensor(uint8_t select_pin){
 		PRINTF("Failed to remove sensor. Shared sensor is not initialized.\n");
 		return SHARED_SENSOR_FAIL;
 	}
+	if (select_pin > SHARED_SENSOR_MAX_SHARABLE_SENSORS) {
+		PRINTF("Failed to remove sensor, \'select_pin\' exceeds maximum select line.\n");
+		return SHARED_SENSOR_FAIL;
+	}
 
 	for(n = list_head(shared_sensors_list); n != NULL; n = list_item_next(n)) {
 		if(n->select_pin == select_pin) {
@@ -194,7 +195,6 @@ shared_sensor_result shared_sensor_unshare_sensor(uint8_t select_pin){
 			return SHARED_SENSOR_SUCCESS;
 		}
 	}
-	PRINTF("Failed to remove sensor, argument \'select_pin\' does not exist.\n");
-	return SHARED_SENSOR_FAIL;
+	return SHARED_SENSOR_SUCCESS;
 }
 /* --------------------------------------------- */

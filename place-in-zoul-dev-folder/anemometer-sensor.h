@@ -20,8 +20,8 @@
 //Wind Speed Sensor
 #define WIND_MAX_SPEED                32
 #define WIND_MIN_SPEED                0
-#define WIND_ANALOG_V_MIN             0.4
-#define WIND_ANALOG_V_MAX             2.0
+#define WIND_ANALOG_MILLV_MIN         400
+#define WIND_ANALOG_MILLV_MAX         2000
 /*--------------------------------------------------------------------------------*/
 //Return values
 #define WIND_SENSOR_ERROR             (-1)

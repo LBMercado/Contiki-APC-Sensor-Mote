@@ -6,7 +6,6 @@
 #define WIND_DIR_SENSOR_PIN_MASK   GPIO_PIN_MASK(WIND_DIR_SENSOR_CTRL_PIN)
 /*--------------------------------------------------------------------------------*/
 //Scaling factors
-#define VOLT_SCALETO_MILLIV        1000
 #define MS_SCALETO_CMS             100
 /*--------------------------------------------------------------------------------*/
 #define WIND_SPEED_TOLERANCE       100 //(in cm/s)
@@ -36,24 +35,23 @@ static anem_info_t anem_info[2];
 @returns: unsigned int (16 bits long) equivalent wind sensor value
 */
 static uint16_t
-ConvertValToWindOutput(uint8_t type, uint32_t val){
+convert_to_wind_value(uint8_t type, uint32_t val){
 	switch(type){
 		case WIND_SPEED_SENSOR:	
 			//Convert voltage value to wind speed using range of max and min voltages and wind speed for the
 			//anemometer
 			//Consider precision of val input (sf. 1st dec. place)
-			if ( (val % 10 > 4 ? val / 10 + 1 : val / 10) <= WIND_ANALOG_V_MIN * VOLT_SCALETO_MILLIV){
+			if ( val <= WIND_ANALOG_MILLV_MIN * 10){
 				val = WIND_MIN_SPEED;
 			}
 			else {
 				//For voltages above minimum value, use the linear relationship to calculate wind speed.
 				float fVal = val;
 				fVal /= 10;
-				fVal = ( fVal - WIND_ANALOG_V_MIN * VOLT_SCALETO_MILLIV ) * WIND_MAX_SPEED / ( WIND_ANALOG_V_MAX * VOLT_SCALETO_MILLIV - WIND_ANALOG_V_MIN * VOLT_SCALETO_MILLIV );
+				fVal = ( fVal - WIND_ANALOG_MILLV_MIN ) * WIND_MAX_SPEED / ( WIND_ANALOG_MILLV_MAX - WIND_ANALOG_MILLV_MIN );
 				
 				val = fVal * MS_SCALETO_CMS;
 			}
-			
 			return val;
 			break;
 		case WIND_DIR_SENSOR:
@@ -71,17 +69,15 @@ ConvertValToWindOutput(uint8_t type, uint32_t val){
 			else if (direction < 0)
 				direction += 360;
 			
-			if		(direction < 23)  val = WIND_DIR_NORTH;
-			else if (direction < 68)  val = WIND_DIR_NORTH | WIND_DIR_EAST;
-			else if (direction < 113) val = WIND_DIR_EAST;
-			else if (direction < 158) val = WIND_DIR_SOUTH | WIND_DIR_EAST;
-			else if (direction < 203) val = WIND_DIR_SOUTH;
-			else if (direction < 248) val = WIND_DIR_SOUTH | WIND_DIR_WEST;
-			else if (direction < 293) val = WIND_DIR_WEST;
-			else if (direction < 338) val = WIND_DIR_NORTH | WIND_DIR_WEST;
-			else 				val = WIND_DIR_NORTH;
-			
-			return val;
+			if		(direction < 23)  return WIND_DIR_NORTH;
+			else if (direction < 68)  return WIND_DIR_NORTH | WIND_DIR_EAST;
+			else if (direction < 113) return WIND_DIR_EAST;
+			else if (direction < 158) return WIND_DIR_SOUTH | WIND_DIR_EAST;
+			else if (direction < 203) return WIND_DIR_SOUTH;
+			else if (direction < 248) return WIND_DIR_SOUTH | WIND_DIR_WEST;
+			else if (direction < 293) return WIND_DIR_WEST;
+			else if (direction < 338) return WIND_DIR_NORTH | WIND_DIR_WEST;
+			else 				return WIND_DIR_NORTH;
 			break;
 		default:
 			PRINTF("ERROR@WIND_SENSOR: ConvertValToWindOutput function parameter \'type\' is not valid.\n");
@@ -196,11 +192,10 @@ value(int type){
 			val /= WIND_SENSOR_ADC_CROSSREF;
 			PRINTF("Wind Sensor (SPEED): value function - mv ADC value = %lu.%lu\n", val / 10, val % 10);
 			
-			anem_info[WIND_SPEED_SENSOR].value = ConvertValToWindOutput(type, val);
+			anem_info[WIND_SPEED_SENSOR].value = convert_to_wind_value(type, val);
 
-			if (anem_info[WIND_SPEED_SENSOR].value > WIND_SPEED_TOLERANCE && anem_info[WIND_SPEED_SENSOR].value - WIND_SPEED_TOLERANCE > WIND_MAX_SPEED ) {
+			if (anem_info[WIND_SPEED_SENSOR].value - WIND_SPEED_TOLERANCE > WIND_MAX_SPEED * MS_SCALETO_CMS)
 				PRINTF("WARNING@WIND_SENSOR(SPEED): value function - Wind Speed exceeded maximum spec. value.\n");
-			}
 			PRINTF("Wind Sensor (SPEED): value function - value = %u cm/s\n", anem_info[WIND_SPEED_SENSOR].value);
 			return anem_info[WIND_SPEED_SENSOR].value;
 			break;
@@ -224,7 +219,7 @@ value(int type){
 			val /= WIND_SENSOR_ADC_CROSSREF;
 			PRINTF("Wind Sensor (DRCTN): value function - mv ADC value = %lu.%lu\n", val / 10, val % 10);
 			
-			anem_info[WIND_DIR_SENSOR].value = ConvertValToWindOutput(type, val);
+			anem_info[WIND_DIR_SENSOR].value = convert_to_wind_value(type, val);
 			PRINTF("Wind Sensor (DRCTN): value function - value = 0x%04x\n", anem_info[WIND_DIR_SENSOR].value);
 			
 			return anem_info[WIND_DIR_SENSOR].value;

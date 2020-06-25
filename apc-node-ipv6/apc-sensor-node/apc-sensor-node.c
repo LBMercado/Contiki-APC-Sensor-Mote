@@ -66,17 +66,17 @@ const uint8_t SENSOR_CALIB_TYPES[SENSOR_CALIB_COUNT] =
 #else
 #define APC_SENSOR_NODE_READ_INTERVAL_SECONDS             APC_SENSOR_NODE_READ_INTERVAL_SECONDS_CONF
 #endif
-
+/*----------------------------------------------------------------------------------*/
 /* Minimum for dht22 read intervals, consider slowest sensor */
 #define APC_SENSOR_NODE_READ_WAIT_MILLIS                  CLOCK_SECOND >> 2
-
+/*----------------------------------------------------------------------------------*/
 /* Amount of time to wait before collector pings sink */
 #ifndef APC_SENSOR_NODE_COLLECTOR_ADV_INTERVAL_SECONDS_CONF
 #define APC_SENSOR_NODE_COLLECTOR_ADV_INTERVAL_SECONDS    45
 #else
 #define APC_SENSOR_NODE_COLLECTOR_ADV_INTERVAL_SECONDS    APC_SENSOR_NODE_COLLECTOR_ADV_INTERVAL_SECONDS_CONF
 #endif
-
+/*----------------------------------------------------------------------------------*/
 /* Amount of time to wait before sink is considered unreachable or unreliable */
 #ifndef APC_SENSOR_NODE_SINK_DEADTIME_SECONDS_CONF
 #define APC_SENSOR_NODE_SINK_DEADTIME_SECONDS             60
@@ -87,19 +87,22 @@ const uint8_t SENSOR_CALIB_TYPES[SENSOR_CALIB_COUNT] =
 #define APC_SENSOR_NODE_SINK_DEADTIME_SECONDS             APC_SENSOR_NODE_SINK_DEADTIME_SECONDS_CONF
 #endif
 #endif
-
+/*----------------------------------------------------------------------------------*/
 #ifndef APC_SENSOR_NODE_AMUX_0BIT_PORT_CONF
 #define APC_SENSOR_NODE_AMUX_0BIT_PORT                    GPIO_D_NUM
 #else
 #define APC_SENSOR_NODE_AMUX_0BIT_PORT                    APC_SENSOR_NODE_AMUX_0BIT_PORT_CONF
 #endif
-
+/*----------------------------------------------------------------------------------*/
 #ifndef APC_SENSOR_NODE_AMUX_0BIT_PIN_CONF
 #define APC_SENSOR_NODE_AMUX_0BIT_PIN                     1
 #else
 #define APC_SENSOR_NODE_AMUX_0BIT_PIN                     APC_SENSOR_NODE_AMUX_0BIT_PIN_CONF
 #endif
-
+/*----------------------------------------------------------------------------------*/
+#define APC_SENSOR_NODE_AMUX_SELECT_ANEMOMETER            0
+#define APC_SENSOR_NODE_AMUX_SELECT_WIND_VANE             1
+/*----------------------------------------------------------------------------------*/
 #define UIP_IP_BUF                                        ( (struct uip_ip_hdr*) & uip_buf[UIP_LLH_LEN] )
 /*----------------------------------------------------------------------------------*/
 typedef struct{
@@ -368,6 +371,7 @@ read_sensor
 		return APC_SENSOR_OPFAILURE;
 	}
 
+
 	switch(sensorType){
 		//HUMIDITY_T and TEMPERATURE_T are read at the same sensor
 	case HUMIDITY_T:
@@ -544,7 +548,7 @@ read_sensor
 		}
 		break;
 	case WIND_SPEED_T:
-		shared_sensor_select_pin(SHARED_ANEM_SPEED);
+		shared_sensor_select_pin(APC_SENSOR_NODE_AMUX_SELECT_ANEMOMETER);
 		value = anem_sensor.value(WIND_SPEED_SENSOR);
 		if (value == WIND_SENSOR_ERROR){
 			PRINTF("-----------------\n");
@@ -570,7 +574,7 @@ read_sensor
 		}
 		break;
 	case WIND_DRCTN_T:
-		shared_sensor_select_pin(SHARED_ANEM_DIRECTION);
+		shared_sensor_select_pin(APC_SENSOR_NODE_AMUX_SELECT_WIND_VANE);
 		value = anem_sensor.value(WIND_DIR_SENSOR);
 		if (value == WIND_SENSOR_ERROR){
 			PRINTF("-----------------\n");
@@ -1034,9 +1038,8 @@ PROCESS_THREAD(apc_sensor_node_en_sensors_process, ev, data)
 	shared_sensor_configure_select_pin(0, APC_SENSOR_NODE_AMUX_0BIT_PIN, APC_SENSOR_NODE_AMUX_0BIT_PORT);
 
 	//share the anemometer and wind vane sensors
-	for (i = 0; i < SHARED_SENSOR_MAX_SHARABLE_SENSORS; i++){
-		shared_sensor_share_pin(&anem_sensor, shared_sensor_type[i]);
-	}
+	shared_sensor_share_pin(&anem_sensor, APC_SENSOR_NODE_AMUX_SELECT_WIND_VANE);
+	shared_sensor_share_pin(&anem_sensor, APC_SENSOR_NODE_AMUX_SELECT_ANEMOMETER);
 
 	print_local_dev_info();
 	leds_off(LEDS_YELLOW);

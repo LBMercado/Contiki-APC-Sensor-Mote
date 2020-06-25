@@ -91,7 +91,7 @@ static uint8_t state;
 #define RSSI_MEASURE_INTERVAL_MAX 86400 /* secs: 1 day */
 #define RSSI_MEASURE_INTERVAL_MIN     5 /* secs */
 #define PUBLISH_INTERVAL_MAX      86400 /* secs: 1 day */
-#define PUBLISH_INTERVAL_MIN         60 /* secs */
+#define PUBLISH_INTERVAL_MIN        600 /* secs */
 /*---------------------------------------------------------------------------*/
 /* A timeout used when waiting to connect to a network */
 #define NET_CONNECT_PERIODIC        (CLOCK_SECOND >> 2)
@@ -103,8 +103,8 @@ static uint8_t state;
 #define DEFAULT_EVENT_TYPE_ID       "status"
 #define DEFAULT_SUBSCRIBE_CMD_TYPE  "+"
 #define DEFAULT_BROKER_PORT         1883
-#define DEFAULT_PUBLISH_INTERVAL    (30 * CLOCK_SECOND)
-#define DEFAULT_KEEP_ALIVE_TIMER    75
+#define DEFAULT_PUBLISH_INTERVAL    (600 * CLOCK_SECOND)
+#define DEFAULT_KEEP_ALIVE_TIMER    900
 #define DEFAULT_RSSI_MEAS_INTERVAL  (CLOCK_SECOND * 30)
 /*---------------------------------------------------------------------------*/
 /* Payload length of ICMPv6 echo requests used to measure RSSI with def rt */
