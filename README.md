@@ -1,5 +1,5 @@
 # Contiki-APC-Sensor-Mote
-This makes use of the __*Contiki OS and Zoul Firefly Platform*__.
+This makes use of the [__*Contiki OS and Zoul Firefly Platform*__](https://github.com/contiki-os/contiki). 
 The codes are designed to work in the Zoul Firefly Platform, I cannot guarantee that they will still work on a different platform.
 
 The following codes written are used to program the motes to read from the sensors, and communicate them from the collector motes to the sink mote.
