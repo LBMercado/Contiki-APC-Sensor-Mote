@@ -103,9 +103,10 @@ value(int type)
 	else {
 		/* conversion mv->ug/m3, output voltage has a linear relationship at specified values with dust density */
 		// make sure to account for significant part in value
-		val = PM25_MIN_OUTPUT_MICRODUST * 10 + ( (val - PM25_MIN_OUTPUT_MILLIVOLT * 10) * (PM25_MAX_OUTPUT_MICRODUST - PM25_MIN_OUTPUT_MICRODUST) * 10 ) / ( ( PM25_MAX_OUTPUT_MILLIVOLT - PM25_MIN_OUTPUT_MILLIVOLT ) * 10 );
+		val = PM25_MIN_OUTPUT_MICRODUST * 10000 + ( val - PM25_MIN_OUTPUT_MILLIVOLT * 10 )
+				* (( PM25_MAX_OUTPUT_MICRODUST - PM25_MIN_OUTPUT_MICRODUST) * 1000 / ( PM25_MAX_OUTPUT_MILLIVOLT - PM25_MIN_OUTPUT_MILLIVOLT ));
 		// truncate the significant value
-		val /= 10;
+		val /= 10000;
 	}
 	
 	PRINTF("PM25-Sensor: computed dust density: %lu ug/m3\n", val);
