@@ -383,12 +383,12 @@ read_sensor
 		} while (value == DHT22_BUSY);
 		if (value != DHT22_ERROR) {
 			sprintf(sensor_infos[index].sensor_reading,
-			"%02d.%02d", 
+			"%d.%d",
 			value / 10, value % 10
 			);
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: HUMIDITY_T \n");
-			PRINTF("Humidity %02d.%02d RH\n", value / 10, value % 10);
+			PRINTF("Humidity %d.%d RH\n", value / 10, value % 10);
 			PRINTF("-----------------\n");
 			// reflect values in aqs sensor
 			aqs_humidity =  value / 10;
@@ -412,12 +412,12 @@ read_sensor
 		} while (value == DHT22_BUSY);
 		if (value != DHT22_ERROR) {
 			sprintf(sensor_infos[index].sensor_reading,
-			"%02d.%02d", 
+			"%d.%d",
 			value / 10, value % 10
 			);
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: TEMPERATURE_T \n");
-			PRINTF("Temperature %02d.%02d deg. C\n", value / 10, value % 10);
+			PRINTF("Temperature %d.%d deg. C\n", value / 10, value % 10);
 			PRINTF("-----------------\n");
 			// reflect values in aqs sensor
 			aqs_temperature =  value;
