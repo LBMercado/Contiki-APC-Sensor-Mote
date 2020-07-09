@@ -5,13 +5,6 @@
 #include "contiki-net.h"
 #include "net/ip/uip.h"
 /*---------------------------------------------------------*/
-/* This defines the maximum amount of sensor nodes we can remember. */
-#ifndef MAX_SENSOR_NODES_CONF
-#define MAX_SENSOR_NODES            3
-#else
-#define MAX_SENSOR_NODES            MAX_SENSOR_NODES_CONF
-#endif
-/*---------------------------------------------------------*/
 #define LOCAL_ADDR_PRINT_INTERVAL   30
 #define PREFIX_UPDATE_INTERVAL      20
 /*---------------------------------------------------------*/
@@ -55,17 +48,6 @@ typedef struct {
 	char data[10];
 } sensor_reading_t;
 /*---------------------------------------------------------*/
-typedef struct {
-	uint8_t size;
-	sensor_reading_t readings[SENSOR_COUNT + SENSOR_CALIB_COUNT];
-} sensor_data_t;
-/*---------------------------------------------------------*/
-typedef struct {
-	uint32_t seq;
-	uint8_t type;
-	sensor_data_t reading;
-} node_data_t;
-/*---------------------------------------------------------*/
 //REF: example-neighbors.c in contiki examples
 /* This structure holds information about sensor nodes. */
 typedef struct sensor_node {
@@ -95,9 +77,6 @@ print_local_addresses(void* data);
 /*---------------------------------------------------------*/
 void
 set_local_ip_addresses(uip_ipaddr_t* prefix_64, uip_ipaddr_t* local_addr);
-/*---------------------------------------------------------*/
-void
-set_remote_ip_addresses(uip_ipaddr_t* prefix_64, uip_ipaddr_t* remote_addr);
 /*---------------------------------------------------------*/
 void
 update_ip_addresses_prefix(void* prefix_64);
