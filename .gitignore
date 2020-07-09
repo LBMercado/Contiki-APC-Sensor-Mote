@@ -175,3 +175,4 @@ obj_zoul/
 
 #api keys
 config.ini
+/MQTT-Server/air_quality_data.csv

@@ -112,7 +112,7 @@ static const char *SENSOR_CALIB_TYPE_HEADERS[] = {
 };
 /*----------------------------------------------------------------------------------*/
 typedef struct{
-	uint8_t sensorType;
+	uint8_t sensor_type;
 	uint8_t is_calibrated; //used only during calibration procedures
 	char sensor_reading[10];
 	char sensor_calib_reading[10]; //used only for read_calib_sensor
@@ -275,9 +275,9 @@ AUTOSTART_PROCESSES(&apc_sensor_node_network_init_process, &apc_sensor_node_en_s
 /*----------------------------------------------------------------------------------*/
 static int
 activate_sensor
-(uint8_t sensorType){
+(uint8_t sensor_type){
 	int retCode;
-	switch(sensorType){
+	switch(sensor_type){
 	case HUMIDITY_T:
 	case TEMPERATURE_T:
 		retCode = SENSORS_ACTIVATE(dht22);
@@ -312,9 +312,9 @@ activate_sensor
 /*----------------------------------------------------------------------------------*/
 static uint8_t
 is_calibrated_sensor
-(uint8_t sensorType){
+(uint8_t sensor_type){
 	for (int i = 0; i < SENSOR_COUNT; i++){
-		if ( sensor_infos[i].sensorType == sensorType ){
+		if ( sensor_infos[i].sensor_type == sensor_type ){
 			return sensor_infos[i].is_calibrated;
 		}
 	}
@@ -324,9 +324,9 @@ is_calibrated_sensor
 /*----------------------------------------------------------------------------------*/
 static int
 get_index_from_sensor_type
-(uint8_t sensorType){
+(uint8_t sensor_type){
 	for(int i = 0; i < SENSOR_COUNT; i++){
-		if (sensor_infos[i].sensorType == sensorType)
+		if (sensor_infos[i].sensor_type == sensor_type)
 			return i;
 	}
 	PRINTF("get_index_from_sensor_type: ERROR - invalid sensor type specified.\n");
@@ -335,8 +335,8 @@ get_index_from_sensor_type
 /*----------------------------------------------------------------------------------*/
 static int
 map_sensor_to_calib_type
-(uint8_t sensorType){
-	switch(sensorType){
+(uint8_t sensor_type){
+	switch(sensor_type){
 		case CO_T:
 			return CO_RO_T;
 
@@ -357,8 +357,8 @@ map_sensor_to_calib_type
 /*----------------------------------------------------------------------------------*/
 static int
 map_calib_to_sensor_type
-(uint8_t calibType){
-	switch(calibType){
+(uint8_t calib_type){
+	switch(calib_type){
 		case CO_RO_T:
 			return CO_T;
 
@@ -379,15 +379,15 @@ map_calib_to_sensor_type
 /*----------------------------------------------------------------------------------*/
 static int
 read_calib_sensor
-(uint8_t sensorType){
-	uint8_t index = get_index_from_sensor_type(sensorType);
+(uint8_t sensor_type){
+	uint8_t index = get_index_from_sensor_type(sensor_type);
 	int64_t value;
 
 	if (index == APC_SENSOR_OPFAILURE){
 		PRINTF("read_calib_sensor: ERROR - invalid sensor type specified. \n");
 		return APC_SENSOR_OPFAILURE;
 	}
-	int calibType = map_sensor_to_calib_type(sensorType);
+	int calibType = map_sensor_to_calib_type(sensor_type);
 
 	switch(calibType){
 		case CO_RO_T:
@@ -497,12 +497,12 @@ read_calib_sensor
 /*----------------------------------------------------------------------------------*/
 static int 
 read_sensor
-(uint8_t sensorType) {
+(uint8_t sensor_type) {
 	static uint8_t index = -1;
 	int value;
 
 	for (int i = 0; i < SENSOR_COUNT; i++){
-		if ( sensor_infos[i].sensorType == sensorType ){
+		if ( sensor_infos[i].sensor_type == sensor_type ){
 			index = i;
 			break;
 		}
@@ -514,7 +514,7 @@ read_sensor
 	}
 
 
-	switch(sensorType){
+	switch(sensor_type){
 		//HUMIDITY_T and TEMPERATURE_T are read at the same sensor
 	case HUMIDITY_T:
 		//Assume it is busy
@@ -1103,16 +1103,22 @@ pub_sensor_data
 	buf_ptr += len;
 	index++;
 	for (; index < SENSOR_COUNT; index++){
-		len = snprintf(buf_ptr, remaining, ",\"%s\":%s",
-		SENSOR_TYPE_HEADERS[index],
-		strcmp(sensor_infos[index].sensor_reading,"") ? sensor_infos[index].sensor_reading : "-1");
-
+		if (sensor_infos[index].sensor_type == WIND_DRCTN_T) {
+			len = snprintf(buf_ptr, remaining, ",\"%s\":\"%s\"",
+			SENSOR_TYPE_HEADERS[index],
+			strcmp(sensor_infos[index].sensor_reading,"") ? sensor_infos[index].sensor_reading : "-1");
+		}
+		else {
+			len = snprintf(buf_ptr, remaining, ",\"%s\":%s",
+			SENSOR_TYPE_HEADERS[index],
+			strcmp(sensor_infos[index].sensor_reading,"") ? sensor_infos[index].sensor_reading : "-1");
+		}
+		remaining -= len;
+		buf_ptr += len;
 		if(len < 0 || len >= remaining) {
 			printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
 			return;
 		}
-		remaining -= len;
-		buf_ptr += len;
 	}
 
 	//calibration values
@@ -1499,7 +1505,7 @@ PROCESS_THREAD(apc_sensor_node_collect_gather_process, ev, data)
 		PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et_collect) );
 		PRINTF("apc_sensor_node_collect_gather_process: starting collection\n");
 		for (index = 0; index < SENSOR_COUNT; index++){
-			read_sensor(sensor_infos[index].sensorType);
+			read_sensor(sensor_infos[index].sensor_type);
 
 			etimer_set(&et_read_wait, APC_SENSOR_NODE_READ_WAIT_MILLIS);
 			PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et_read_wait) );
@@ -1508,12 +1514,12 @@ PROCESS_THREAD(apc_sensor_node_collect_gather_process, ev, data)
 
 		if (read_calib_sensors_count != SENSOR_CALIB_COUNT){
 			for (index = 0; index < SENSOR_CALIB_COUNT; index++){
-				int sensorType = map_calib_to_sensor_type(SENSOR_CALIB_TYPES[index]);
+				int sensor_type = map_calib_to_sensor_type(SENSOR_CALIB_TYPES[index]);
 				PRINTF(apc_sensor_node_collect_gather_process.name);
-				PRINTF(": Calibration type: 0x%02x\n", sensorType);
-				if ( !is_calibrated_sensor(sensorType) ) {
+				PRINTF(": Calibration type: 0x%02x\n", sensor_type);
+				if ( !is_calibrated_sensor(sensor_type) ) {
 
-					if (read_calib_sensor(sensorType) == APC_SENSOR_OPSUCCESS)
+					if (read_calib_sensor(sensor_type) == APC_SENSOR_OPSUCCESS)
 						read_calib_sensors_count++;
 				}
 				leds_toggle(LEDS_YELLOW);
@@ -1535,10 +1541,10 @@ PROCESS_THREAD(apc_sensor_node_en_sensors_process, ev, data)
 	leds_on(LEDS_YELLOW);
 	//initialize sensor types and configure
 	for (i = 0; i < SENSOR_COUNT; i++) {
-		sensor_infos[i].sensorType = SENSOR_TYPES[i];
+		sensor_infos[i].sensor_type = SENSOR_TYPES[i];
 		sensor_infos[i].is_calibrated = 0;
-		PRINTF("apc_sensor_node_en_sensors_process: Sensor(0x%01x): %s\n", sensor_infos[i].sensorType,
-		activate_sensor(sensor_infos[i].sensorType) == APC_SENSOR_OPFAILURE ? "ERROR\0" : "OK\0" );
+		PRINTF("apc_sensor_node_en_sensors_process: Sensor(0x%01x): %s\n", sensor_infos[i].sensor_type,
+		activate_sensor(sensor_infos[i].sensor_type) == APC_SENSOR_OPFAILURE ? "ERROR\0" : "OK\0" );
 	}
 	//configure the analog multiplexer
 	uint8_t select_lines_count = SHARED_SENSOR_MAX_SELECT_LINES;

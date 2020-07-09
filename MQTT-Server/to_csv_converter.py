@@ -5,7 +5,7 @@ import csv
 
 class CsvConverter:
     def __init__(self, db_access: DataAccess, columns_sensor: list, columns_external: list,
-                 invalid_values: list, csv_filename: str):
+                 invalid_values: list, csv_filename: str, collector_count: int = 1):
         self.db_access = db_access
         if not self.db_access.is_connection_active:
             raise ValueError("no connection to database.")
@@ -16,15 +16,16 @@ class CsvConverter:
         if self.columns_sensor.count == 0:
             raise ValueError("columns_sensor is empty.")
         self.tolerance = 10
+        self.collector_count = collector_count
 
     def convert(self):
         if self.columns_sensor.count == 0:
             raise ValueError("columns_sensor is empty.")
 
-        filter_column = {'collectors': {'$elemMatch': {'$or': [{key: {}} for key in self.columns_sensor]}}}
+        filter_column = {'collectors_data': {'$elemMatch': {'$or': [{key: {}} for key in self.columns_sensor]}}}
 
         # make sure field exists in document and it does not have invalid values
-        for or_clause in filter_column['collectors']['$elemMatch']['$or']:
+        for or_clause in filter_column['collectors_data']['$elemMatch']['$or']:
             for key in or_clause.keys():
                 if len(self.invalid_values) > 0:
                     or_clause[key] = {'$exists': True, '$nin': self.invalid_values}
@@ -46,22 +47,23 @@ class CsvConverter:
             keys_to_remove = []
             inner_keys_to_remove = []
             for key in document:
-                if key == 'collectors':
-                    for collector in document['collectors']:
-                        for inner_key in collector.keys():
-                            if inner_key not in self.columns_sensor and inner_key not in self.columns_external:
+                if key == 'collectors_data':
+                    for collector in document['collectors_data']:
+                        for inner_key, inner_value in collector.items():
+                            if inner_key not in self.columns_sensor and inner_key not in self.columns_external\
+                                    or inner_value in self.invalid_values:
                                 inner_keys_to_remove.append(inner_key)
                 elif key not in self.columns_sensor and key not in self.columns_external:
                     keys_to_remove.append(key)
             for key in keys_to_remove:
                 document.pop(key)
             for inner_key in inner_keys_to_remove:
-                for collector in document['collectors']:
+                for collector in document['collectors_data']:
                     collector.pop(inner_key)
 
         # normalize for csv reader
         for i in range(len(documents)):
-            aggregator = SensorAggregator(documents[i]['collectors'], self.tolerance)
+            aggregator = SensorAggregator(documents[i]['collectors_data'], self.tolerance)
             aggregator.aggregate()
             avg_sensor_data = aggregator.average_sensor_data
 
