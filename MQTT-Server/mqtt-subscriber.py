@@ -27,7 +27,6 @@ LOCATION = "Manila,ph"
 """ State Machine Variables """
 state = 0
 MAX_STATES = len(SUBTOPICS)
-curr_subtopic_index = 0
 messages = []
 
 
@@ -44,25 +43,21 @@ def on_connect(client, userdata, flags, rc):
 # The callback for when a PUBLISH message is received from the server.
 def on_message(client, userdata, message):
     print("Received PUBLISH")
-    global state, curr_subtopic_index, messages
-    if state < MAX_STATES - 1 and SUBTOPICS[curr_subtopic_index] in message.topic:
+    global state, messages
+    if state < MAX_STATES - 1:
         print("Current State: " + str(state))
         print("TOPIC: " + message.topic)
         print("Message(Raw): " + str(message.payload))
         messages.append(message.payload)
         print("Appended message to message list.")
-        if curr_subtopic_index + 1 <= len(SUBTOPICS):
-            curr_subtopic_index += 1
-            state += 1
-        else:
-            curr_subtopic_index = 0
-            state = 0
+        state += 1
 
-    elif state == MAX_STATES - 1 and SUBTOPICS[curr_subtopic_index] in message.topic:
+    elif state == MAX_STATES - 1:
         print("Current State: " + str(state))
         print("TOPIC: " + message.topic)
         print("Message(Raw): " + str(message.payload))
         messages.append(message.payload)
+        print("Appended message to message list.")
         if dataLogic.is_connection_active:
             document = {}
             try:
@@ -97,9 +92,9 @@ def on_message(client, userdata, message):
         else:
             print("Database is not active")
 
-        curr_subtopic_index = 0
         state = 0
         messages = []
+
 
 # debug logger
 def on_log(client, userdata, level, buf):
