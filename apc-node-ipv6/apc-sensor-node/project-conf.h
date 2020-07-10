@@ -81,6 +81,7 @@
 /*----------------------------------------------------------------*/
 #define MQTT_CONF_BROKER_IP_ADDR        "fd00::1"
 #define APC_SENSOR_ADDRESS_CONF         "fd00::212:4B00:194A:51E1"
+#define APC_SENSOR_MOTE_ID_CONF         "mote1"
 #define MQTT_CONF_STATUS_LED            LEDS_WHITE
 /*----------------------------------------------------------------*/
 /*This code was taken from rpl-collect example found in example/ipv6*/
@@ -95,11 +96,11 @@
 #ifdef TEST_MORE_ROUTES
 /* configure number of neighbors and routes */
 #define NBR_TABLE_CONF_MAX_NEIGHBORS     10
-#define UIP_CONF_MAX_ROUTES   30
+#define UIP_CONF_MAX_ROUTES              40
 #else
 /* configure number of neighbors and routes */
-#define NBR_TABLE_CONF_MAX_NEIGHBORS     10
-#define UIP_CONF_MAX_ROUTES   10
+#define NBR_TABLE_CONF_MAX_NEIGHBORS     5
+#define UIP_CONF_MAX_ROUTES              10
 #endif /* TEST_MORE_ROUTES */
 
 #undef NETSTACK_CONF_RDC
@@ -126,7 +127,7 @@
 
 #if WITH_NON_STORING
 #undef RPL_NS_CONF_LINK_NUM
-#define RPL_NS_CONF_LINK_NUM 40 /* Number of links maintained at the root. Can be set to 0 at non-root nodes. */
+#define RPL_NS_CONF_LINK_NUM 10 /* Number of links maintained at the root. Can be set to 0 at non-root nodes. */
 #undef UIP_CONF_MAX_ROUTES
 #define UIP_CONF_MAX_ROUTES 0 /* No need for routes */
 #undef RPL_CONF_MOP
@@ -135,5 +136,4 @@
 /*----------------------------------------------------------------*/
 /*This code was taken from rpl-collect example found in example/ipv6*/
 /*----------------------------------------------------------------*/
-
 #endif

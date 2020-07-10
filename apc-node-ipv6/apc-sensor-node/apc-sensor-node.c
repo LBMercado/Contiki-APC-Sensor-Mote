@@ -40,7 +40,7 @@
 #else
 #define APC_SENSOR_ADDRESS ""
 #endif
-/*---------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------------*/
 #if !NETSTACK_CONF_WITH_IPV6 || !UIP_CONF_ROUTER || !UIP_CONF_IPV6_RPL
 #error "APC-Sink-Node will be unable to function properly with this current contiki configuration."
 #error "Check the values of: NETSTACK_CONF_WITH_IPV6, UIP_CONF_ROUTER, UIP_CONF_IPV6_RPL"
@@ -73,7 +73,11 @@ const uint8_t SENSOR_CALIB_TYPES[SENSOR_CALIB_COUNT] =
 /*----------------------------------------------------------------------------------*/
 /* Identifier for this mote, used for MQTT subtopic */
 #define APC_SENSOR_TOPIC_NAME                             "apc-iot"
+#ifdef  APC_SENSOR_MOTE_ID_CONF
+#define APC_SENSOR_MOTE_ID                                APC_SENSOR_MOTE_ID_CONF
+#else
 #define APC_SENSOR_MOTE_ID                                "mote1"
+#endif
 /*----------------------------------------------------------------------------------*/
 /* Minimum for dht22 read intervals, consider slowest sensor */
 #define APC_SENSOR_NODE_READ_WAIT_MILLIS                  CLOCK_SECOND >> 2
@@ -246,7 +250,7 @@ static char sub_topic[BUFFER_SIZE];
 * The main MQTT buffers.
 * We will need to increase if we start publishing more data.
 */
-#define APP_BUFFER_SIZE 1024
+#define APP_BUFFER_SIZE 600
 static struct mqtt_connection conn;
 static char app_buffer[APP_BUFFER_SIZE];
 /*---------------------------------------------------------------------------*/
@@ -272,7 +276,7 @@ PROCESS(apc_sensor_node_en_sensors_process, "APC Sensor Node (Sensor Initializat
 PROCESS(mqtt_handler_process, "MQTT Process Handler");
 /*----------------------------------------------------------------------------------*/
 AUTOSTART_PROCESSES(&apc_sensor_node_network_init_process, &apc_sensor_node_en_sensors_process, &mqtt_handler_process);
-/*----------------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 static int
 activate_sensor
 (uint8_t sensor_type){
@@ -811,14 +815,6 @@ print_local_dev_info()
 	
 	printf("VDD3 = %d mV\n", vdd3_sensor.value(CC2538_SENSORS_VALUE_TYPE_CONVERTED));
 	printf("Internal Temperature = %d.%d deg. C\n", temp / 1000, temp % 1000);
-}
-/*----------------------------------------------------------------------------------*/
-static void
-tcpip_handler(void)
-{
-	if( uip_newdata() ) {
-		
-	}
 }
 /*----------------------------------------------------------------------------------*/
 void
@@ -1435,7 +1431,6 @@ PROCESS_THREAD(apc_sensor_node_network_init_process, ev, data)
 	PROCESS_BEGIN();
 	PRINTF("APC Sensor Node (Network Initialization) begins...\n");
 	seqNo = 1;
-	PRINTF("UIP_CONF_BUFFER_SIZE: %d\n", UIP_CONF_BUFFER_SIZE);
 	uip_create_unspecified(&prefix);
 	leds_off(LEDS_ALL);
 	leds_on(LEDS_GREEN);
@@ -1454,17 +1449,13 @@ PROCESS_THREAD(apc_sensor_node_network_init_process, ev, data)
 	
 	/* set address of this node */
 	set_local_ip_addresses(&prefix, &collect_addr);
-	
+
 	print_local_addresses(NULL);
 	ctimer_set(&ct_net_print, CLOCK_SECOND * LOCAL_ADDR_PRINT_INTERVAL, print_local_addresses, NULL);
 	ctimer_set(&ct_update_addr, CLOCK_SECOND * PREFIX_UPDATE_INTERVAL, update_ip_addresses_prefix, &curPrefix);
+
 	while(1) {
 		PROCESS_YIELD();
-		if(ev == tcpip_event) {
-			leds_on(STATUS_LED);
-			ctimer_set(&ct_led, NO_NET_LED_DURATION, publish_led_off, NULL);
-			tcpip_handler();
-		}
 		if(ctimer_expired(&ct_net_print))
 			ctimer_reset(&ct_net_print);
 		if(ctimer_expired(&ct_update_addr)) {
