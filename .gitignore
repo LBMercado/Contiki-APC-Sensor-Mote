@@ -171,8 +171,13 @@ desktop.ini
 obj_zoul/
 
 #python 
-.pyc
+*.pyc
 
-#api keys
+#api keys and sensitive information
 config.ini
-/MQTT-Server/air_quality_data.csv
+
+#app output
+/MQTT-Server/*.csv
+
+#pycharm env
+/MQTT-Server/venv
