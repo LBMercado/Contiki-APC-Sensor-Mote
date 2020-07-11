@@ -17,7 +17,7 @@ def main():
                       'CO (PPM)', 'NO2 (PPM)', 'O3 (PPB)',
                       'Wind Speed (m/s)', 'Wind Direction']
     columns_external = ['weather', 'date']
-    invalid_values = ['', 0, -1]
+    invalid_values = ['', -1]
 
     converter = CsvConverter(db_access, columns_sensor, columns_external, invalid_values,
                              CSV_FILENAME)
