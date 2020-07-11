@@ -98,6 +98,10 @@ const uint8_t SENSOR_CALIB_TYPES[SENSOR_CALIB_COUNT] =
 #define APC_SENSOR_NODE_AMUX_SELECT_WIND_VANE             1
 /*----------------------------------------------------------------------------------*/
 #define UIP_IP_BUF                                        ( (struct uip_ip_hdr*) & uip_buf[UIP_LLH_LEN] )
+#define UDP_CLIENT_PORT	6000
+#define UDP_SERVER_PORT	6001
+#define UDP_EXAMPLE_ID  190
+static struct uip_udp_conn *sink_conn;
 /*----------------------------------------------------------------------------------*/
 static const char *SENSOR_TYPE_HEADERS[] = {
 		"Temperature (°C)",
@@ -128,6 +132,7 @@ static uip_ipaddr_t collect_addr;
 static uip_ipaddr_t prefix;
 /*----------------------------------------------------------------------------------*/
 static uint32_t seqNo;
+static struct etimer et_collect;
 /*----------------------------------------------------------------------------------*/
 /* MQTT-specific Configuration START (code copied from cc2538-common/mqtt-demo)*/
 /*
@@ -1420,6 +1425,35 @@ state_machine(void)
 /*----------------------------------------------------------------------------------*/
 /* MQTT-specific definitions END (code copied from cc2538-common/mqtt-demo, with some modifications)*/
 /*----------------------------------------------------------------------------------*/
+static void
+tcpip_handler(void)
+{
+	mote_message_t *appdata;
+
+	if(uip_newdata()) {
+		leds_on(STATUS_LED);
+		ctimer_set(&ct_led, PUBLISH_LED_ON_DURATION, publish_led_off, NULL);
+
+		appdata = (mote_message_t *)uip_appdata;
+		if (appdata->type == SINK_CMD) {
+			PRINTF("Command received from sink [");
+			PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+			PRINTF("]: %s\n", appdata->data);
+
+			//reset timers
+			etimer_reset(&et_collect);
+			PRINTF("Collect timer reset!\n");
+			etimer_reset(&publish_periodic_timer);
+			PRINTF("MQTT publish timer reset!\n");
+		}
+		else {
+			PRINTF("Unknown message type received from [");
+			PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
+			PRINTF("]\n");
+		}
+	}
+}
+/*----------------------------------------------------------------------------------*/
 PROCESS_THREAD(apc_sensor_node_network_init_process, ev, data)
 {
 	//initialization
@@ -1450,12 +1484,26 @@ PROCESS_THREAD(apc_sensor_node_network_init_process, ev, data)
 	/* set address of this node */
 	set_local_ip_addresses(&prefix, &collect_addr);
 
+	sink_conn = udp_new(NULL, UIP_HTONS(UDP_CLIENT_PORT), NULL);
+	if(sink_conn == NULL) {
+		PRINTF("No UDP connection available, this node won't be able to receive sink commands!\n");
+	} else {
+		udp_bind(sink_conn, UIP_HTONS(UDP_SERVER_PORT));
+
+		PRINTF("Created a server connection with remote address ");
+		PRINT6ADDR(&sink_conn->ripaddr);
+		PRINTF(" local/remote port %u/%u\n", UIP_HTONS(sink_conn->lport),
+			 UIP_HTONS(sink_conn->rport));
+	}
+
 	print_local_addresses(NULL);
 	ctimer_set(&ct_net_print, CLOCK_SECOND * LOCAL_ADDR_PRINT_INTERVAL, print_local_addresses, NULL);
 	ctimer_set(&ct_update_addr, CLOCK_SECOND * PREFIX_UPDATE_INTERVAL, update_ip_addresses_prefix, &curPrefix);
 
 	while(1) {
 		PROCESS_YIELD();
+		if(ev == tcpip_event)
+		   tcpip_handler();
 		if(ctimer_expired(&ct_net_print))
 			ctimer_reset(&ct_net_print);
 		if(ctimer_expired(&ct_update_addr)) {
@@ -1480,7 +1528,6 @@ PROCESS_THREAD(apc_sensor_node_network_init_process, ev, data)
 PROCESS_THREAD(apc_sensor_node_collect_gather_process, ev, data)
 {
 	//initialization
-	static struct etimer et_collect;
 	static struct etimer et_read_wait;
 	static uint8_t index = 0;
 	static uint8_t read_calib_sensors_count = 0;
