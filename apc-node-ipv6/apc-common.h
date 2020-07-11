@@ -17,15 +17,7 @@
 typedef enum
 {
 	//request/reply headers
-	COLLECTOR_ADV, //advertise as collector mote
-	COLLECTOR_ACK, //acknowledge as collector mote
-	SINK_ADV, //advertise as sink mote
-	SINK_ACK, //acknowledge as sink mote
-	DATA_REQUEST, //request data from collector mote
-	DATA_ACK, //acknowledge data request
-	
-	//error headers
-	SENSOR_FAILED, //failed to read sensor values
+	SINK_CMD, // identify header as command from sink
 	
 	//sensor data identity headers (also a sensor type)
 	TEMPERATURE_T, //unit in Deg. Celsius
@@ -47,6 +39,7 @@ typedef struct {
 	uint8_t type;
 	char data[10];
 } sensor_reading_t;
+typedef sensor_reading_t mote_message_t;
 /*---------------------------------------------------------*/
 //REF: example-neighbors.c in contiki examples
 /* This structure holds information about sensor nodes. */
