@@ -2,17 +2,16 @@
 This makes use of the [_**Contiki OS**_](https://github.com/contiki-os/contiki) and [_**Zoul Firefly Platform**_](https://github.com/Zolertia/Resources/wiki/Firefly).
 The codes are designed to work in the Zoul Firefly Platform, I cannot guarantee that they will still work on a different platform.
 
-The following codes written are used to program the motes to read from the sensors, and communicate them from the collector motes to the sink mote.
+The following codes written are used to program the motes to read from the sensors, and communicate them from the collector motes to a sink in the border router.
 
 ## Two implementations are available here:
 * the **rime** implementation is a non-ip based network used for testing purposes with no connectivity outside its local network.
-* the **ipv6** implementation provides connectivity outside its local network through a *border router* ~~which is also the sink mote.~~
+* the **ipv6** implementation provides connectivity outside its local network through a *border router*
 	- the border router is typically connected through a USB interface on a computer or the Raspberry Pi in this case.
 
-## There are three types of motes in this mote network:
+## There are two types of motes in this mote network:
 1. APC-Sensor-Node -> Collector Mote
-2. APC-Sink-Node -> Sink Mote ~~& Border Router(Not Implemented Yet)~~
-3. Border Router
+2. Border Router
 
 ### Sensors Used
 * DHT22 (Temperature and Humidity)
@@ -52,12 +51,17 @@ The following codes written are used to program the motes to read from the senso
 
 You can make use of the mqtt subscriber to make the published data persistent. The subscriber will store the published data locally using MongoDB.
 
-## Running the MQTT Server/Subscriber
+## Running the MQTT Server/Subscriber (MQTT-Server)
 
 	1. Make sure that Mosquitto and MongoDB are properly set up and working
 	2. Rename distribution config.ini to actual .ini file; add your openweather API key there.
 	3. Make necessary changes in mqtt-subscriber variables (mosquitto and mongodb config, ip addresses etc.)
 	4. Run mqtt-subscriber.py
+
+## Running the CSV Converter for Stored Sensor Values in MongoDB (MQTT-Server)
+	1. Look into csv_convert.py and change desired sensor columns or configuration values.
+	2. Run csv_convert.py
+	3. The .CSV file should be outputted in the directory where the csv_convert.py is.
 
 ## Software Requirements
 * Mosquitto - for MQTT functionality

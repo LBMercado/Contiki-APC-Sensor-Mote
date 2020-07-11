@@ -16,7 +16,7 @@ class ToCsvConverterTestCase(unittest.TestCase):
         self.csv_filename = 'test.csv'
 
     def test_should_parse_correct_inputs(self):
-        columns_sensor = ['Temperature (°C)', 'Humidity (H)', 'PM25 (ug/m3)', 'PM25 (PPM)', 'CO (PPM)', 'O3 (PPB)',
+        columns_sensor = ['Temperature (°C)', 'Humidity (%RH)', 'PM25 (ug/m3)', 'PM25 (PPM)', 'CO (PPM)', 'O3 (PPB)',
                           'Wind Speed (m/s)', 'Wind Direction']
         columns_external = ['weather']
         invalid_values = ['', 0, -1]
@@ -27,7 +27,7 @@ class ToCsvConverterTestCase(unittest.TestCase):
         converter.convert()
 
     def test_should_parse_correct_inputs_with_no_invalids(self):
-        columns_sensor = ['Temperature (°C)', 'Humidity (H)', 'PM25 (ug/m3)', 'PM25 (PPM)', 'CO (PPM)', 'O3 (PPB)',
+        columns_sensor = ['Temperature (°C)', 'Humidity (%RH)', 'PM25 (ug/m3)', 'PM25 (PPM)', 'CO (PPM)', 'O3 (PPB)',
                           'Wind Speed (m/s)', 'Wind Direction']
         columns_external = ['weather']
         invalid_values = []

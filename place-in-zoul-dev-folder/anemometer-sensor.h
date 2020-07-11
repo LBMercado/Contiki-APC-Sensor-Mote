@@ -34,13 +34,13 @@
 #ifdef WIND_SPEED_SENSOR_CONF_CTRL_PIN
 #define WIND_SPEED_SENSOR_CTRL_PIN    WIND_SPEED_SENSOR_CONF_CTRL_PIN
 #else 
-#define WIND_SPEED_SENSOR_CTRL_PIN    ADC_SENSORS_ADC3_PIN //PA2
+#define WIND_SPEED_SENSOR_CTRL_PIN    ADC_SENSORS_ADC5_PIN //PA7
 #endif
 /*--------------------------------------------------------------------------------*/
 #ifdef WIND_DIR_SENSOR_CONF_CTRL_PIN
 #define WIND_DIR_SENSOR_CTRL_PIN      WIND_DIR_SENSOR_CONF_CTRL_PIN
 #else
-#define WIND_DIR_SENSOR_CTRL_PIN      ADC_SENSORS_ADC2_PIN //PA4
+#define WIND_DIR_SENSOR_CTRL_PIN      ADC_SENSORS_ADC5_PIN //PA7
 #endif
 /*--------------------------------------------------------------------------------*/
 //initial values
