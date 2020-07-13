@@ -1440,11 +1440,12 @@ tcpip_handler(void)
 			PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
 			PRINTF("]: %s\n", appdata->data);
 
-			//reset timers
-			etimer_reset(&et_collect);
+			// reset timers
+			/* TODO: timer reset hangs the collect timer and mqtt publish functionality, fix this
+			 * etimer_reset(&et_collect);
 			PRINTF("Collect timer reset!\n");
 			etimer_reset(&publish_periodic_timer);
-			PRINTF("MQTT publish timer reset!\n");
+			PRINTF("MQTT publish timer reset!\n");*/
 		}
 		else {
 			PRINTF("Unknown message type received from [");
@@ -1535,36 +1536,40 @@ PROCESS_THREAD(apc_sensor_node_collect_gather_process, ev, data)
 	PROCESS_EXITHANDLER();
 	PROCESS_BEGIN();
 	PRINTF("APC Sensor Node (Collector Gather) begins...\n");
+
 	etimer_set(&et_collect, CLOCK_SECOND * APC_SENSOR_NODE_READ_INTERVAL_SECONDS);
 	while (1)
 	{
-		leds_off(LEDS_YELLOW);
-		//wait for a specified interval before reading sensors
-		PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et_collect) );
-		PRINTF("apc_sensor_node_collect_gather_process: starting collection\n");
-		for (index = 0; index < SENSOR_COUNT; index++){
-			read_sensor(sensor_infos[index].sensor_type);
+		PROCESS_YIELD();
+		if (ev == PROCESS_EVENT_TIMER && data == &et_collect) {
+			PRINTF("apc_sensor_node_collect_gather_process: starting collection\n");
+			for (index = 0; index < SENSOR_COUNT; index++){
+				read_sensor(sensor_infos[index].sensor_type);
 
-			etimer_set(&et_read_wait, APC_SENSOR_NODE_READ_WAIT_MILLIS);
-			PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et_read_wait) );
-			leds_toggle(LEDS_YELLOW);
-		}
+				etimer_set(&et_read_wait, APC_SENSOR_NODE_READ_WAIT_MILLIS);
+				PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et_read_wait) );
 
-		if (read_calib_sensors_count != SENSOR_CALIB_COUNT){
-			for (index = 0; index < SENSOR_CALIB_COUNT; index++){
-				int sensor_type = map_calib_to_sensor_type(SENSOR_CALIB_TYPES[index]);
-				PRINTF(apc_sensor_node_collect_gather_process.name);
-				PRINTF(": Calibration type: 0x%02x\n", sensor_type);
-				if ( !is_calibrated_sensor(sensor_type) ) {
-
-					if (read_calib_sensor(sensor_type) == APC_SENSOR_OPSUCCESS)
-						read_calib_sensors_count++;
-				}
-				leds_toggle(LEDS_YELLOW);
+				leds_on(LEDS_YELLOW);
+				ctimer_set(&ct_led, PUBLISH_LED_ON_DURATION, publish_led_off, NULL);
 			}
+
+			if (read_calib_sensors_count != SENSOR_CALIB_COUNT){
+				for (index = 0; index < SENSOR_CALIB_COUNT; index++){
+					int sensor_type = map_calib_to_sensor_type(SENSOR_CALIB_TYPES[index]);
+					PRINTF(apc_sensor_node_collect_gather_process.name);
+					PRINTF(": Calibration type: 0x%02x\n", sensor_type);
+					if ( !is_calibrated_sensor(sensor_type) ) {
+
+						if (read_calib_sensor(sensor_type) == APC_SENSOR_OPSUCCESS)
+							read_calib_sensors_count++;
+					}
+					leds_on(LEDS_YELLOW);
+					ctimer_set(&ct_led, PUBLISH_LED_ON_DURATION, publish_led_off, NULL);
+				}
+			}
+			PRINTF("apc_sensor_node_collect_gather_process: collection finished\n");
+			etimer_reset(&et_collect);
 		}
-		PRINTF("apc_sensor_node_collect_gather_process: collection finished\n");
-		etimer_reset(&et_collect);
 	}
 	PROCESS_END();
 }

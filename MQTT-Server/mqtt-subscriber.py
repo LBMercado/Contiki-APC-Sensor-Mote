@@ -12,7 +12,7 @@ SERVER_ADDR = "fd00::1"
 MQTT_PORT = 1883
 KEEP_ALIVE_TIME = 60
 TOP_LEVEL_TOPIC = "apc-iot"
-SUBTOPICS = ["mote1"]
+SUBTOPICS = ["036", "056"]
 QOS_LEVEL = 0
 client = mqtt.Client(SUBSCRIBER_ID, protocol=mqtt.MQTTv31)
 """ Database Parameters """

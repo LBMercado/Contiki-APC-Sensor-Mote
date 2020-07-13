@@ -65,9 +65,9 @@
 /* reference resistances measured on clean air
  * set to zero to force calibration
 */
-#define MQ131_CONF_RO_CLEAN_AIR         46.147
-#define MICS4514_NOX_CONF_RO_CLEAN_AIR  1542.407
-#define MICS4514_RED_CONF_RO_CLEAN_AIR  42949.671
+#define MQ131_CONF_RO_CLEAN_AIR         0
+#define MICS4514_NOX_CONF_RO_CLEAN_AIR  0
+#define MICS4514_RED_CONF_RO_CLEAN_AIR  0
 
 /* load resistances for forming the voltage divider in measuring
  * sensor output
@@ -81,7 +81,7 @@
 /*----------------------------------------------------------------*/
 #define MQTT_CONF_BROKER_IP_ADDR        "fd00::1"
 #define APC_SENSOR_ADDRESS_CONF         "fd00::212:4B00:194A:51E1"
-#define APC_SENSOR_MOTE_ID_CONF         "mote1"
+#define APC_SENSOR_MOTE_ID_CONF         "056"
 #define MQTT_CONF_STATUS_LED            LEDS_WHITE
 /*----------------------------------------------------------------*/
 /*This code was taken from rpl-collect example found in example/ipv6*/
