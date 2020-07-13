@@ -14,6 +14,8 @@ class SensorAggregator:
 
             for sensor_data in self.sensors_data:
                 for key in sensor_data:
+                    if sensor_data[key] == '' or sensor_data[key] == -1:
+                        continue
                     if key not in self.average_sensor_data:
                         self.average_sensor_data[key] = sensor_data[key]
                         if not isinstance(sensor_data[key], str):
