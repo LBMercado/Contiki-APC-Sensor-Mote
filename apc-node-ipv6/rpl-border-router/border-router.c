@@ -58,7 +58,7 @@
 /*--------------------------------------------------------*/
 #define UDP_CLIENT_PORT        6000
 #define UDP_SERVER_PORT        6001
-#define RESET_MOTE_DELAY       20
+#define RESET_MOTE_DELAY       30
 static struct uip_udp_conn *sink_conn;
 /*--------------------------------------------------------*/
 #define DEBUG 1
