@@ -44,22 +44,16 @@ class CsvConverter:
 
         # remove unneeded key pairs
         for document in documents:
-            keys_to_remove = []
-            inner_keys_to_remove = []
-            for key in document:
+            for key in list(document.keys()):
                 if key == 'collectors_data':
                     for collector in document['collectors_data']:
-                        for inner_key, inner_value in collector.items():
-                            if inner_key not in self.columns_sensor and inner_key not in self.columns_external\
+                        for inner_key, inner_value in list(collector.items()):
+                            if inner_key not in self.columns_sensor and inner_key not in self.columns_external \
                                     or inner_value in self.invalid_values:
-                                inner_keys_to_remove.append(inner_key)
-                elif key not in self.columns_sensor and key not in self.columns_external:
-                    keys_to_remove.append(key)
-            for key in keys_to_remove:
-                document.pop(key)
-            for inner_key in inner_keys_to_remove:
-                for collector in document['collectors_data']:
-                    collector.pop(inner_key)
+                                del collector[inner_key]
+
+                elif key not in self.columns_external:
+                    del document[key]
 
         # normalize for csv reader
         for i in range(len(documents)):
