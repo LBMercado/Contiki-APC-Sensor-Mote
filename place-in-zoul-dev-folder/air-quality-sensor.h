@@ -116,7 +116,7 @@ Refer to https://github.com/ultimaterobotics/mq7-co-monitor/blob/master/co_monit
 	#define MQ7_RL_KOHM MQ7_CONF_RL_KOHM
 #endif
 #ifndef MQ131_CONF_RL_KOHM
-	#define MQ131_RL_KOHM 1
+	#define MQ131_RL_KOHM 1000
 #else
 	#define MQ131_RL_KOHM MQ131_CONF_RL_KOHM
 #endif

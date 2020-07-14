@@ -19,7 +19,7 @@
 //values for calibration
 #define CALIBRATION_SAMPLE_COUNT 100 //number of samples before finalizing calibration values
 /*------------------------------------------------------------------*/
-//tolerance in 3 decimal digit precision
+// tolerance in 3 decimal digit precision
 #define RESRATIO_TOLERANCE       1
 /*------------------------------------------------------------------*/
 /*Scaling Factors*/
@@ -1057,9 +1057,9 @@ PROCESS_THREAD(aqs_mq7_calibration_process, ev, data)
 {
 	//declarations
 	static struct etimer et;
-	static uint8_t sampleCount;
+	static uint8_t sample_count;
 	/* Rs = sensor resistance in various conditions (common for MQ Sensors, in milliohms)*/
-	static uint32_t rs;
+	static uint64_t rs;
 	static measure_aqs_data_t measure_aqs_data;
 
 	PROCESS_EXITHANDLER();
@@ -1068,9 +1068,9 @@ PROCESS_THREAD(aqs_mq7_calibration_process, ev, data)
 
 	//initialization
 	rs = 0;
-	sampleCount = 0;
 	measure_aqs_data.sensorType = MQ7_SENSOR;
 	measure_aqs_data.measure_pin_mask = MQ7_SENSOR_PIN_MASK;
+	aqs_info[MQ7_SENSOR].state = AQS_INIT_PHASE;
 
 	//check if sensor has already been initialized/calibrated
 	if (aqs_info[MQ7_SENSOR].ro > 0){
@@ -1084,18 +1084,18 @@ PROCESS_THREAD(aqs_mq7_calibration_process, ev, data)
 		PROCESS_EXIT();
 	}
 	
-	aqs_info[MQ7_SENSOR].state = AQS_INIT_PHASE;
 	aqs_info[MQ7_SENSOR].ro = 0;
 	PRINTF("AQS(MQ7): aqs calibration process - sensor set to AQS_INIT_PHASE.\n");
-	while (sampleCount != CALIBRATION_SAMPLE_COUNT){
-		PRINTF("AQS(MQ7): aqs calibration process - sampling %hhu out of %d.\n", sampleCount + 1, CALIBRATION_SAMPLE_COUNT);
+	while (sample_count != CALIBRATION_SAMPLE_COUNT){
+		PRINTF("AQS(MQ7): aqs calibration process - sampling %hhu out of %d.\n", sample_count + 1, CALIBRATION_SAMPLE_COUNT);
 		
 		//turn the heater on and take measurement at this phase
 		turn_on_heater(MQ7_SENSOR_HEATING_PORT_BASE, MQ7_SENSOR_HEATING_PIN_MASK, MQ7_HEATING_HIGH_TIME, &et);
 		PRINTF("aqs_mq7_calibration_process: heater turned on\n");
-		rs = measure_aqs_ro( &measure_aqs_data );
-		aqs_info[MQ7_SENSOR].ro += rs;
-		
+
+		rs += measure_aqs_ro( &measure_aqs_data );
+		sample_count++;
+
 		//wait for the heater on duration to expire
 		PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et) );
 		
@@ -1103,11 +1103,10 @@ PROCESS_THREAD(aqs_mq7_calibration_process, ev, data)
 		turn_off_heater(MQ7_SENSOR_HEATING_PORT_BASE, MQ7_SENSOR_HEATING_PIN_MASK, MQ7_HEATING_LOW_TIME, &et);
 		PRINTF("aqs_mq7_calibration_process: heater turned off\n");
 		PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et) );
-		
-		sampleCount++;
 	}
 	
-	aqs_info[MQ7_SENSOR].ro /= sampleCount;
+	rs /= sample_count;
+	aqs_info[MQ7_SENSOR].ro = rs;
 	PRINTF("AQS(MQ7): aqs calibration process - calibration finished w/ values.\n");
 	PRINTF("Ro at clean air = %lu\n", aqs_info[MQ7_SENSOR].ro);
 	
@@ -1123,9 +1122,9 @@ PROCESS_THREAD(aqs_mq131_calibration_process, ev, data)
 {
 	//declarations
 	static struct etimer et;
-	static uint8_t sampleCount;
+	static uint8_t sample_count;
 	/* Rs = sensor resistance in various conditions (common for MQ Sensors, in milliohms)*/
-	static uint32_t rs;
+	static uint64_t rs;
 	static measure_aqs_data_t measure_aqs_data;
 
 	PROCESS_EXITHANDLER();
@@ -1134,9 +1133,10 @@ PROCESS_THREAD(aqs_mq131_calibration_process, ev, data)
 
 	//initialization
 	rs = 0;
-	sampleCount = 0;
+	sample_count = 0;
 	measure_aqs_data.sensorType = MQ131_SENSOR;
 	measure_aqs_data.measure_pin_mask = MQ131_SENSOR_PIN_MASK;
+	aqs_info[MQ131_SENSOR].state = AQS_INIT_PHASE;
 
 	//check if sensor has already been initialized/calibrated
 	if (aqs_info[MQ131_SENSOR].ro > 0){
@@ -1150,22 +1150,24 @@ PROCESS_THREAD(aqs_mq131_calibration_process, ev, data)
 		PROCESS_EXIT();
 	}
 	
-	aqs_info[MQ131_SENSOR].state = AQS_INIT_PHASE;
 	aqs_info[MQ131_SENSOR].ro = 0;
 	PRINTF("AQS(MQ131): aqs calibration process - sensor set to AQS_INIT_PHASE.\n");
-	while (sampleCount != CALIBRATION_SAMPLE_COUNT){
-		PRINTF("AQS(MQ131): aqs calibration process - sampling %hhu out of %d.\n", sampleCount + 1, CALIBRATION_SAMPLE_COUNT);
-		
-		rs = measure_aqs_ro( &measure_aqs_data );
-		aqs_info[MQ131_SENSOR].ro += rs;
-		//set a sampling duration
-		etimer_set(&et, CLOCK_SECOND * MQ131_MEASUREMENT_INTERVAL);
+	//set a sampling duration
+	etimer_set(&et, CLOCK_SECOND * MQ131_MEASUREMENT_INTERVAL);
+	while (sample_count != CALIBRATION_SAMPLE_COUNT){
+		PRINTF("AQS(MQ131): aqs calibration process - sampling %hhu out of %d.\n", sample_count + 1, CALIBRATION_SAMPLE_COUNT);
+
+		rs += measure_aqs_ro( &measure_aqs_data );
+		sample_count++;
+
 		//wait for sampling period to lapse
 		PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et) );
-		sampleCount++;
+		etimer_reset(&et);
 	}
 	
-	aqs_info[MQ131_SENSOR].ro /= sampleCount;
+	rs /= sample_count;
+
+	aqs_info[MQ131_SENSOR].ro = rs;
 	PRINTF("AQS(MQ131): aqs calibration process - calibration finished w/ values.\n");
 	PRINTF("Ro at clean air = %lu\n", aqs_info[MQ131_SENSOR].ro);
 	
@@ -1181,9 +1183,9 @@ PROCESS_THREAD(aqs_mq135_calibration_process, ev, data)
 {
 	//declarations
 	static struct etimer et;
-	static uint8_t sampleCount;
+	static uint8_t sample_count;
 	/* Rs = sensor resistance in various conditions (common for MQ Sensors, in milliohms)*/
-	static uint32_t rs;
+	static uint64_t rs;
 	static measure_aqs_data_t measure_aqs_data;
 
 	PROCESS_EXITHANDLER();
@@ -1192,9 +1194,10 @@ PROCESS_THREAD(aqs_mq135_calibration_process, ev, data)
 
 	//initialization
 	rs = 0;
-	sampleCount = 0;
+	sample_count = 0;
 	measure_aqs_data.sensorType = MQ135_SENSOR;
 	measure_aqs_data.measure_pin_mask = MQ135_SENSOR_PIN_MASK;
+	aqs_info[MQ135_SENSOR].state = AQS_INIT_PHASE;
 
 	//check if sensor has already been initialized/calibrated
 	if (aqs_info[MQ135_SENSOR].ro > 0){
@@ -1208,23 +1211,22 @@ PROCESS_THREAD(aqs_mq135_calibration_process, ev, data)
 		PROCESS_EXIT();
 	}
 	
-	aqs_info[MQ135_SENSOR].state = AQS_INIT_PHASE;
 	aqs_info[MQ135_SENSOR].ro = 0;
 	PRINTF("AQS(MQ135): aqs calibration process - sensor set to AQS_INIT_PHASE.\n");
-	while (sampleCount != CALIBRATION_SAMPLE_COUNT){
-		PRINTF("AQS(MQ135): aqs calibration process - sampling %hhu out of %d.\n", sampleCount + 1, CALIBRATION_SAMPLE_COUNT);
-		
-		rs = measure_aqs_ro( &measure_aqs_data );
-		aqs_info[MQ135_SENSOR].ro += rs;
+	etimer_set(&et, CLOCK_SECOND * MQ135_MEASUREMENT_INTERVAL);
+	while (sample_count != CALIBRATION_SAMPLE_COUNT){
+		PRINTF("AQS(MQ135): aqs calibration process - sampling %hhu out of %d.\n", sample_count + 1, CALIBRATION_SAMPLE_COUNT);
 
-		//set a sampling duration
-		etimer_set(&et, CLOCK_SECOND * MQ135_MEASUREMENT_INTERVAL);
+		rs += measure_aqs_ro( &measure_aqs_data );
+		sample_count++;
+		
 		//wait for sampling period to lapse
 		PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et) );
-		sampleCount++;
+		etimer_reset(&et);
 	}
 	
-	aqs_info[MQ135_SENSOR].ro /= sampleCount;
+	rs /= sample_count;
+	aqs_info[MQ135_SENSOR].ro = rs;
 	PRINTF("AQS(MQ135): aqs calibration process - calibration finished w/ values.\n");
 	PRINTF("Ro at clean air = %lu\n", aqs_info[MQ135_SENSOR].ro);
 	
@@ -1241,10 +1243,11 @@ PROCESS_THREAD(aqs_mics4514_calibration_process, ev, data)
 {
 	//declarations
 	static struct etimer et;
-	static uint8_t sampleCount;
+	static uint8_t sample_count_red;
+	static uint8_t sample_count_nox;
 	/* Rs = sensor resistance in various conditions (in milliohms)*/
-	static uint32_t rs_red;
-	static uint32_t rs_nox;
+	static uint64_t rs_red;
+	static uint64_t rs_nox;
 	static measure_aqs_data_t measure_aqs_data_red;
 	static measure_aqs_data_t measure_aqs_data_nox;
 
@@ -1255,11 +1258,13 @@ PROCESS_THREAD(aqs_mics4514_calibration_process, ev, data)
 
 	//initialization
 	rs_red = rs_nox = 0;
-	sampleCount = 0;
+	sample_count_red = sample_count_nox = 0;
 	measure_aqs_data_red.sensorType = MICS4514_SENSOR_RED;
 	measure_aqs_data_red.measure_pin_mask = MICS4514_SENSOR_RED_PIN_MASK;
 	measure_aqs_data_nox.sensorType = MICS4514_SENSOR_NOX;
 	measure_aqs_data_nox.measure_pin_mask = MICS4514_SENSOR_NOX_PIN_MASK;
+	aqs_info[MICS4514_SENSOR_RED].state = AQS_INIT_PHASE;
+	aqs_info[MICS4514_SENSOR_NOX].state = AQS_INIT_PHASE;
 
 	//check if sensor has already been initialized/calibrated
 	if (aqs_info[MICS4514_SENSOR_RED].ro > 0 && aqs_info[MICS4514_SENSOR_NOX].ro){
@@ -1284,32 +1289,30 @@ PROCESS_THREAD(aqs_mics4514_calibration_process, ev, data)
 		PROCESS_EXIT();
 	}
 
-	aqs_info[MICS4514_SENSOR_RED].state = AQS_INIT_PHASE;
-	aqs_info[MICS4514_SENSOR_NOX].state = AQS_INIT_PHASE;
 	aqs_info[MICS4514_SENSOR_RED].ro = 0;
 	aqs_info[MICS4514_SENSOR_NOX].ro = 0;
 	PRINTF(aqs_mics4514_calibration_process.name);
 	PRINTF(" - sensor set to AQS_INIT_PHASE.\n");
-	while (sampleCount != CALIBRATION_SAMPLE_COUNT){
+	//set a sampling duration
+	etimer_set(&et, CLOCK_SECOND * MICS4514_MEASUREMENT_INTERVAL);
+	while (sample_count_red != CALIBRATION_SAMPLE_COUNT && sample_count_nox != CALIBRATION_SAMPLE_COUNT){
 		PRINTF(aqs_mics4514_calibration_process.name);
-		PRINTF(" - sampling %hhu out of %d.\n", sampleCount + 1, CALIBRATION_SAMPLE_COUNT);
+		PRINTF(" - sampling %hhu out of %d for RED.\n", sample_count_red + 1, CALIBRATION_SAMPLE_COUNT);
 
-		rs_red = measure_aqs_ro( &measure_aqs_data_red );
-		aqs_info[MICS4514_SENSOR_RED].ro += rs_red;
+		rs_red += measure_aqs_ro( &measure_aqs_data_red );
+		rs_nox += measure_aqs_ro( &measure_aqs_data_nox );
+		sample_count_red++;
+		sample_count_nox++;
 
-		rs_nox = measure_aqs_ro( &measure_aqs_data_nox );
-		aqs_info[MICS4514_SENSOR_NOX].ro += rs_nox;
-
-		//set a sampling duration
-		etimer_set(&et, CLOCK_SECOND * MICS4514_MEASUREMENT_INTERVAL);
 		//wait for sampling period to lapse
 		PROCESS_WAIT_EVENT_UNTIL( etimer_expired(&et) );
-
-		sampleCount++;
+		etimer_reset(&et);
 	}
 
-	aqs_info[MICS4514_SENSOR_RED].ro /= sampleCount;
-	aqs_info[MICS4514_SENSOR_NOX].ro /= sampleCount;
+	rs_red /= sample_count_red;
+	rs_nox /= sample_count_nox;
+	aqs_info[MICS4514_SENSOR_RED].ro = rs_red;
+	aqs_info[MICS4514_SENSOR_NOX].ro = rs_nox;
 
 	PRINTF(aqs_mics4514_calibration_process.name);
 	PRINTF(": aqs calibration process - calibration finished w/ values.\n");
