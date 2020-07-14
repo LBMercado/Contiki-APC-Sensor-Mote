@@ -1140,7 +1140,7 @@ pub_sensor_data
 		if (calib_index != APC_SENSOR_OPFAILURE){
 			len = snprintf(buf_ptr, remaining, "{\"%s\":%s}",
 				SENSOR_CALIB_TYPE_HEADERS[index],
-				strcmp(sensor_infos[index].sensor_calib_reading,"") ? sensor_infos[index].sensor_reading : "-1");
+				strcmp(sensor_infos[calib_index].sensor_calib_reading,"") ? sensor_infos[calib_index].sensor_calib_reading : "-1");
 			remaining -= len;
 			buf_ptr += len;
 			index++;
@@ -1161,7 +1161,7 @@ pub_sensor_data
 
 		len = snprintf(buf_ptr, remaining, ",{\"%s\":%s}",
 				SENSOR_CALIB_TYPE_HEADERS[index],
-				strcmp(sensor_infos[index].sensor_calib_reading,"") ? sensor_infos[index].sensor_reading : "-1");
+				strcmp(sensor_infos[calib_index].sensor_calib_reading,"") ? sensor_infos[calib_index].sensor_calib_reading : "-1");
 
 		if(len < 0 || len >= remaining) {
 			printf("Buffer too short. Have %d, need %d + \\0\n", remaining, len);
@@ -1543,6 +1543,7 @@ PROCESS_THREAD(apc_sensor_node_collect_gather_process, ev, data)
 		PROCESS_YIELD();
 		if (ev == PROCESS_EVENT_TIMER && data == &et_collect) {
 			PRINTF("apc_sensor_node_collect_gather_process: starting collection\n");
+			// collect general sensor data
 			for (index = 0; index < SENSOR_COUNT; index++){
 				read_sensor(sensor_infos[index].sensor_type);
 
@@ -1553,6 +1554,7 @@ PROCESS_THREAD(apc_sensor_node_collect_gather_process, ev, data)
 				ctimer_set(&ct_led, PUBLISH_LED_ON_DURATION, publish_led_off, NULL);
 			}
 
+			// collect sensor calibration data
 			if (read_calib_sensors_count != SENSOR_CALIB_COUNT){
 				for (index = 0; index < SENSOR_CALIB_COUNT; index++){
 					int sensor_type = map_calib_to_sensor_type(SENSOR_CALIB_TYPES[index]);
