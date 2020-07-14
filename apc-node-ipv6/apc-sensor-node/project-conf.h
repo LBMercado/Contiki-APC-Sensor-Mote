@@ -72,7 +72,7 @@
 /* load resistances for forming the voltage divider in measuring
  * sensor output
  */
-#define MQ135_CONF_RL_KOHM              1000
+#define MQ131_CONF_RL_KOHM              1000
 #define MICS4514_RED_RL_KOHM            47
 #define MICS4514_NOX_RL_KOHM            22
 
@@ -82,6 +82,8 @@
 #define MQTT_CONF_BROKER_IP_ADDR        "fd00::1"
 #define APC_SENSOR_ADDRESS_CONF         "fd00::212:4B00:194A:51E1"
 #define APC_SENSOR_MOTE_ID_CONF         "056"
+//#define APC_SENSOR_ADDRESS_CONF         "fd00::212:4B00:1932:E37A"
+//#define APC_SENSOR_MOTE_ID_CONF         "036"
 #define MQTT_CONF_STATUS_LED            LEDS_WHITE
 /*----------------------------------------------------------------*/
 /*This code was taken from rpl-collect example found in example/ipv6*/
