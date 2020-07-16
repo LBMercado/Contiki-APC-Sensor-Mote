@@ -3,6 +3,8 @@
 #include "sys/etimer.h"
 #include "dev/zoul-sensors.h"
 #include "dev/adc-sensors.h"
+#include "dev/gpio.h"
+#include "dev/ioc.h"
 #include <stdio.h>
 #include <limits.h>
 /*------------------------------------------------------------------*/
@@ -457,6 +459,11 @@ static uint32_t environment_compensate(int16_t temp, uint8_t hum, uint32_t res_r
 static uint32_t
 convert_raw_to_sensor_res(const uint8_t type, uint32_t value)
 {	
+	if (value == 0) {
+		PRINTF("Error for AQS: convert_raw_to_sensor_res function parameter \'value\' cannot be zero.\n");
+		return 0;
+	}
+
 	switch (type)
 	{
 	case MQ7_SENSOR:
@@ -498,15 +505,15 @@ convert_raw_to_sensor_res(const uint8_t type, uint32_t value)
 		return value;
 		break;
 	case MQ131_SENSOR:
-		/* Refer to datasheet
-		*	RS = ( Vc / VRL - 1 ) × RL
+		/* Sensor forms a voltage divider with load resistor RL
+		*	RS = ( (Vc – VRL) / VRL ) * RL
 		*	Where:
 		*		Vc = source voltage at time of measurement (5000mV)
 		*		VRL = reference resistor voltage, output of A0 Pin
 		*		*RL = reference resistor
 		*
 		*/
-		value = ( ( 5000 / (float)value / 10 ) - 1 ) * ( MQ131_RL_KOHM * KOHM_SCALETO_MILLIOHM);
+		value = ( ( 50000 - (float)value ) / ( (float)value ) ) * (MQ131_RL_KOHM * KOHM_SCALETO_MILLIOHM);
 		return value;
 		break;
 	case MQ135_SENSOR:
@@ -522,7 +529,7 @@ convert_raw_to_sensor_res(const uint8_t type, uint32_t value)
 		return value;
 		break;
 	default:
-		PRINTF("Error for AQS: ConvertRawValToPPM function parameter \'type\' is not valid.\n");
+		PRINTF("Error for AQS: convert_raw_to_sensor_res function parameter \'type\' is not valid.\n");
 		return 0;
 	}
 }
@@ -782,6 +789,12 @@ configure(int type, int value)
 			return AQS_ERROR;
 		}
 
+		//take control of the heating pins
+		GPIO_SOFTWARE_CONTROL(MQ7_SENSOR_HEATING_PORT_BASE, MQ7_SENSOR_HEATING_PIN_MASK);
+		ioc_set_over(MQ7_SENSOR_HEATING_PORT, MQ7_SENSOR_HEATING_PIN, IOC_OVERRIDE_DIS);
+		GPIO_SET_OUTPUT(MQ7_SENSOR_HEATING_PORT_BASE, MQ7_SENSOR_HEATING_PIN_MASK);
+		GPIO_CLR_PIN(MQ7_SENSOR_HEATING_PORT_BASE, MQ7_SENSOR_HEATING_PIN_MASK);
+
 		//set initial values
 		aqs_info[MQ7_SENSOR].ro = MQ7_RO_CLEAN_AIR * OHM_SCALETO_MILLIOHM;
 		aqs_info[MQ7_SENSOR].state = AQS_INIT_PHASE;
@@ -909,6 +922,12 @@ configure(int type, int value)
 			PRINTF("Error for AQS: configure function (MICS4514_NOX) - Failed to configure ADC sensor.\n");
 			return AQS_ERROR;
 		}
+
+		//take control of the heating pins
+		GPIO_SOFTWARE_CONTROL(MICS4514_SENSOR_HEATING_PORT_BASE, MICS4514_SENSOR_HEATING_PIN_MASK);
+		ioc_set_over(MICS4514_SENSOR_HEATING_PORT, MICS4514_SENSOR_HEATING_PIN, IOC_OVERRIDE_DIS);
+		GPIO_SET_OUTPUT(MICS4514_SENSOR_HEATING_PORT_BASE, MICS4514_SENSOR_HEATING_PIN_MASK);
+		GPIO_CLR_PIN(MICS4514_SENSOR_HEATING_PORT_BASE, MICS4514_SENSOR_HEATING_PIN_MASK);
 
 		//set initial values
 		aqs_info[MICS4514_SENSOR_NOX].ro = MICS4514_NOX_RO_CLEAN_AIR * OHM_SCALETO_MILLIOHM;
