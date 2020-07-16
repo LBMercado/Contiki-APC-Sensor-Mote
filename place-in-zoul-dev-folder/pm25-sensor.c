@@ -38,7 +38,8 @@ configure(int type, int value)
 				GPIO_SOFTWARE_CONTROL(PM25_SENSOR_LED_PORT_BASE, PM25_SENSOR_LED_PIN_MASK);
 				ioc_set_over(PM25_SENSOR_LED_CTRL_PORT, PM25_SENSOR_LED_CTRL_PIN, IOC_OVERRIDE_DIS);
 				GPIO_SET_OUTPUT(PM25_SENSOR_LED_PORT_BASE, PM25_SENSOR_LED_PIN_MASK);
-				GPIO_CLR_PIN(PM25_SENSOR_LED_PORT_BASE, PM25_SENSOR_LED_PIN_MASK);
+				// note: active low IR LED Pin
+				GPIO_SET_PIN(PM25_SENSOR_LED_PORT_BASE, PM25_SENSOR_LED_PIN_MASK);
 
 				/* configure the output pin*/
 				if ( adc_zoul.configure(SENSORS_HW_INIT, PM25_SENSOR_OUT_PIN_MASK) == ZOUL_SENSORS_ERROR ){
@@ -73,7 +74,8 @@ value(int type)
 		return PM25_ERROR;
 	}
 	/* send a pulse wave to the IR LED Pin then measure */
-	GPIO_SET_PIN(PM25_SENSOR_LED_PORT_BASE, PM25_SENSOR_LED_PIN_MASK);
+	// note: active low IR LED Pin
+	GPIO_CLR_PIN(PM25_SENSOR_LED_PORT_BASE, PM25_SENSOR_LED_PIN_MASK);
 	clock_delay_usec(PM25_SENSOR_PULSE_DELAY);
 	val = (uint32_t)adc_zoul.value(PM25_SENSOR_OUT_PIN_MASK);
 	
@@ -111,7 +113,7 @@ value(int type)
 	
 	PRINTF("PM25-Sensor: computed dust density: %lu ug/m3\n", val);
 	/* clear pulse wave pin */
-	GPIO_CLR_PIN(PM25_SENSOR_LED_PORT_BASE, PM25_SENSOR_LED_PIN_MASK);
+	GPIO_SET_PIN(PM25_SENSOR_LED_PORT_BASE, PM25_SENSOR_LED_PIN_MASK);
 
 	return (uint16_t)val;
 }

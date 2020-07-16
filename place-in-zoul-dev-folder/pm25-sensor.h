@@ -5,10 +5,10 @@
 #ifndef PM25_SENSOR_H_
 #define PM25_SENSOR_H_
 /*---------------------------------------------------------*/
-#define PM25_ERROR 	             (-1)
+#define PM25_ERROR 	                 (-1)
 #define PM25_SUCCESS                 0x00
 #define PM25_SENSOR                  "PM25 Sensor (GP2Y1014AU0f)"
-#define PM25_SENSOR_PULSE_DELAY      320 //refer to datasheet of GP2Y1014AU0f
+#define PM25_SENSOR_PULSE_DELAY      280 //refer to datasheet of GP2Y1014AU0f, recommended pulse width for LED
 #define PM25_ADC_REF                 50000 //in mV, sf. 1st decimal place
 #define PM25_ADC_CROSSREF            33000 //in mV, sf. 1st decimal place
 /* -------------------------------------------------------------------------- */
