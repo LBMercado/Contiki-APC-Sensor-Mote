@@ -2,8 +2,10 @@
 #include "dev/zoul-sensors.h"
 /*--------------------------------------------------------------------------------*/
 //pin and port configuration
+#if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
 #define WIND_SPEED_SENSOR_PIN_MASK GPIO_PIN_MASK(WIND_SPEED_SENSOR_CTRL_PIN)
 #define WIND_DIR_SENSOR_PIN_MASK   GPIO_PIN_MASK(WIND_DIR_SENSOR_CTRL_PIN)
+#endif
 /*--------------------------------------------------------------------------------*/
 //Scaling factors
 #define MS_SCALETO_CMS             100
@@ -130,11 +132,18 @@ configure(int type, int value){
 				PRINTF("WARNING@WIND_SENSOR(SPEED): Sensor is already enabled.\n");
 				return WIND_SENSOR_SUCCESS;
 			}
-
+#if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
 			if(adc_zoul.configure(SENSORS_HW_INIT, WIND_SPEED_SENSOR_PIN_MASK) == ZOUL_SENSORS_ERROR) {
 				PRINTF("Error for Wind Sensor (SPEED): configure function - Failed to configure ADC sensor.\n");
 				return WIND_SENSOR_ERROR;
 			}
+#else
+			if(adc128s022.configure(ADC128S022_INIT, WIND_SPEED_SENSOR_EXT_ADC_CHANNEL) == ADC128S022_ERROR) {
+				PRINTF("Error for Wind Sensor (SPEED): configure function - Failed to configure ADC sensor.\n");
+				return WIND_SENSOR_ERROR;
+			}
+#endif
+
 			
 			PRINTF("Wind Sensor (SPEED): configure function - WIND_SPEED_SENSOR has been configured.\n");
 			//init
@@ -148,11 +157,18 @@ configure(int type, int value){
 				PRINTF("WARNING@WIND_SENSOR(DRCTN): Sensor is already enabled.\n");
 				return WIND_SENSOR_SUCCESS;
 			}
-
+#if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
 			if(adc_zoul.configure(SENSORS_HW_INIT, WIND_DIR_SENSOR_PIN_MASK) == ZOUL_SENSORS_ERROR) {
 				PRINTF("Error for Wind Sensor (DRCTN): configure function - Failed to configure ADC sensor.\n");
 				return WIND_SENSOR_ERROR;
 			}
+#else
+			if(adc128s022.configure(ADC128S022_INIT, WIND_DIR_SENSOR_EXT_ADC_CHANNEL) == ADC128S022_ERROR) {
+				PRINTF("Error for Wind Sensor (DRCTN): configure function - Failed to configure ADC sensor.\n");
+				return WIND_SENSOR_ERROR;
+			}
+#endif
+
 			
 			PRINTF("Wind Sensor (DRCTN): configure function - WIND_DIR_SENSOR has been configured.\n");
 			//init
@@ -178,6 +194,7 @@ value(int type){
 				return WIND_SENSOR_ERROR;
 			}
 
+#if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
 			val = adc_zoul.value(WIND_SPEED_SENSOR_PIN_MASK);
 			if (val == ZOUL_SENSORS_ERROR){
 				PRINTF("Error@WIND_SENSOR(SPEED): value function - failed to get value from ADC sensor\n");
@@ -190,6 +207,20 @@ value(int type){
 			/* convert 3v ref to 5v ref */
 			val *= WIND_SENSOR_ADC_REF;
 			val /= WIND_SENSOR_ADC_CROSSREF;
+#else
+			val = adc128s022.value(WIND_SPEED_SENSOR_EXT_ADC_CHANNEL);
+			if (val == ADC128S022_ERROR){
+				PRINTF("Error@WIND_SENSOR(SPEED): value function - failed to get value from ADC sensor\n");
+				anem_info[WIND_SPEED_SENSOR].value = 0;
+				return WIND_SENSOR_ERROR;
+			}
+			PRINTF("Wind Sensor (SPEED): value function - raw ADC value = %lu\n", val);
+
+			/* 12 ENOBs ADC, output is digitized level of analog signal*/
+			/* convert to 5v ref */
+			val *= WIND_SENSOR_ADC_REF;
+			val /= ADC128S022_ADC_MAX_LEVEL;
+#endif
 			PRINTF("Wind Sensor (SPEED): value function - mv ADC value = %lu.%lu\n", val / 10, val % 10);
 			
 			anem_info[WIND_SPEED_SENSOR].value = convert_to_wind_value(type, val);
@@ -205,6 +236,7 @@ value(int type){
 				PRINTF("ERROR@WIND_SENSOR(DRCTN): Sensor is disabled. Enable with configure function.\n");
 				return WIND_SENSOR_ERROR;
 			}
+#if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
 			val = adc_zoul.value(WIND_DIR_SENSOR_PIN_MASK);
 			if (val == ZOUL_SENSORS_ERROR){
 				PRINTF("Error for Wind Sensor (DRCTN): value function - failed to get value from ADC sensor\n");
@@ -217,6 +249,20 @@ value(int type){
 			/* convert 3v ref to 5v ref */
 			val *= WIND_SENSOR_ADC_REF;
 			val /= WIND_SENSOR_ADC_CROSSREF;
+#else
+			val = adc128s022.value(WIND_DIR_SENSOR_EXT_ADC_CHANNEL);
+			if (val == ADC128S022_ERROR){
+				PRINTF("Error@WIND_SENSOR(DRCTN): value function - failed to get value from ADC sensor\n");
+				anem_info[WIND_DIR_SENSOR].value = 0;
+				return WIND_SENSOR_ERROR;
+			}
+			PRINTF("Wind Sensor (DRCTN): value function - raw ADC value = %lu\n", val);
+
+			/* 12 ENOBs ADC, output is digitized level of analog signal*/
+			/* convert to 5v ref */
+			val *= WIND_SENSOR_ADC_REF;
+			val /= ADC128S022_ADC_MAX_LEVEL;
+#endif
 			PRINTF("Wind Sensor (DRCTN): value function - mv ADC value = %lu.%lu\n", val / 10, val % 10);
 			
 			anem_info[WIND_DIR_SENSOR].value = convert_to_wind_value(type, val);

@@ -1,9 +1,14 @@
 /* modified code of pm10-sensor found in zoul/dev */
 /*---------------------------------------------------------*/
-#include "lib/sensors.h"
-/*---------------------------------------------------------*/
 #ifndef PM25_SENSOR_H_
 #define PM25_SENSOR_H_
+/*---------------------------------------------------------*/
+#include "lib/sensors.h"
+#if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+#include "dev/adc-zoul.h"
+#else
+#include "dev/adc128s022.h"
+#endif
 /*---------------------------------------------------------*/
 #define PM25_ERROR 	                 (-1)
 #define PM25_SUCCESS                 0x00
@@ -34,11 +39,25 @@
 #else
 #define PM25_SENSOR_LED_CTRL_PORT        GPIO_D_NUM
 #endif
+/* -------------------------------------------------------------------------- */
+/* -------------------- External ADC Definitions ---------------------------- */
+/* -------------------------------------------------------------------------- */
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+#ifdef PM25_SENSOR_OUT_CONF_EXT_ADC_CHANNEL
+#define PM25_SENSOR_OUT_EXT_ADC_CHANNEL         PM25_SENSOR_OUT_CONF_EXT_ADC_CHANNEL
+#else
+#define PM25_SENSOR_OUT_EXT_ADC_CHANNEL         5
+#endif
+/* -------------------------------------------------------------------------- */
+/* -------------------- Internal ADC Definitions ---------------------------- */
+/* -------------------------------------------------------------------------- */
+#else
 #ifdef PM25_SENSOR_OUT_CONF_CTRL_PIN
 #define PM25_SENSOR_OUT_CTRL_PIN         PM25_SENSOR_OUT_CONF_CTRL_PIN
 #else
 #define PM25_SENSOR_OUT_CTRL_PIN         ADC_SENSORS_ADC1_PIN
 #endif
+#endif /* if ADC_SENSORS_CONF_USE_EXTERNAL_ADC */
 /* -------------------------------------------------------------------------- */
 extern const struct sensors_sensor pm25;
 /* -------------------------------------------------------------------------- */

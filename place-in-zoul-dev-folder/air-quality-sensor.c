@@ -2,19 +2,20 @@
 #include "dev/air-quality-sensor.h"
 #include "sys/etimer.h"
 #include "dev/zoul-sensors.h"
-#include "dev/adc-sensors.h"
 #include "dev/gpio.h"
 #include "dev/ioc.h"
 #include <stdio.h>
 #include <limits.h>
 /*------------------------------------------------------------------*/
+#if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
 #define MQ7_SENSOR_PIN_MASK                      GPIO_PIN_MASK(MQ7_SENSOR_CTRL_PIN)
 #define MQ131_SENSOR_PIN_MASK                    GPIO_PIN_MASK(MQ131_SENSOR_CTRL_PIN)
 #define MQ135_SENSOR_PIN_MASK                    GPIO_PIN_MASK(MQ135_SENSOR_CTRL_PIN)
-#define MQ7_SENSOR_HEATING_PIN_MASK              GPIO_PIN_MASK(MQ7_SENSOR_HEATING_PIN)
-#define MQ7_SENSOR_HEATING_PORT_BASE             GPIO_PORT_TO_BASE(MQ7_SENSOR_HEATING_PORT)
 #define MICS4514_SENSOR_RED_PIN_MASK             GPIO_PIN_MASK(MICS4514_SENSOR_RED_CTRL_PIN)
 #define MICS4514_SENSOR_NOX_PIN_MASK             GPIO_PIN_MASK(MICS4514_SENSOR_NOX_CTRL_PIN)
+#endif
+#define MQ7_SENSOR_HEATING_PIN_MASK              GPIO_PIN_MASK(MQ7_SENSOR_HEATING_PIN)
+#define MQ7_SENSOR_HEATING_PORT_BASE             GPIO_PORT_TO_BASE(MQ7_SENSOR_HEATING_PORT)
 #define MICS4514_SENSOR_HEATING_PIN_MASK         GPIO_PIN_MASK(MICS4514_SENSOR_HEATING_PIN)
 #define MICS4514_SENSOR_HEATING_PORT_BASE        GPIO_PORT_TO_BASE(MICS4514_SENSOR_HEATING_PORT)
 /*------------------------------------------------------------------*/
@@ -52,10 +53,17 @@ PROCESS(aqs_mics4514_measurement_process, "AQS Measurement (MICS-4514) Process H
 /*------------------------------------------------------------------*/
 static process_event_t calibration_finished_event;
 /*------------------------------------------------------------------*/
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
 typedef struct{
-	uint8_t sensorType;
+	uint8_t sensor_type;
+	uint8_t measure_channel;
+} measure_aqs_data_t;
+#else
+typedef struct{
+	uint8_t sensor_type;
 	uint32_t measure_pin_mask;
 } measure_aqs_data_t;
+#endif
 typedef struct {
   uint8_t state; //sensor status
   uint64_t value; //resratio equivalent of sensor output, precision in 3 decimal digits
@@ -588,44 +596,57 @@ measure_aqs_ro(const void* data_ptr)
 	aqs_info_data = (measure_aqs_data_t*)(data_ptr);
 	
 	/* make sure it is a valid sensor type */
-	if (aqs_info_data->sensorType != MQ7_SENSOR && 
-			aqs_info_data->sensorType != MQ131_SENSOR &&
-			aqs_info_data->sensorType != MQ135_SENSOR &&
-			aqs_info_data->sensorType != MICS4514_SENSOR_RED &&
-			aqs_info_data->sensorType != MICS4514_SENSOR_NOX){
+	if (aqs_info_data->sensor_type != MQ7_SENSOR &&
+			aqs_info_data->sensor_type != MQ131_SENSOR &&
+			aqs_info_data->sensor_type != MQ135_SENSOR &&
+			aqs_info_data->sensor_type != MICS4514_SENSOR_RED &&
+			aqs_info_data->sensor_type != MICS4514_SENSOR_NOX){
 		PRINTF("measure_aqs_ro: sensor(0x%02x) ERROR - unexpected sensor type.\n",
-			aqs_info_data->sensorType);
+			aqs_info_data->sensor_type);
 		return 0;
 	}
 	
-	if ( aqs_info[aqs_info_data->sensorType].state != AQS_BUSY &&
-		aqs_info[aqs_info_data->sensorType].state != AQS_ENABLED &&
-		aqs_info[aqs_info_data->sensorType].state != AQS_INIT_PHASE){
+	if ( aqs_info[aqs_info_data->sensor_type].state != AQS_BUSY &&
+		aqs_info[aqs_info_data->sensor_type].state != AQS_ENABLED &&
+		aqs_info[aqs_info_data->sensor_type].state != AQS_INIT_PHASE){
 		PRINTF("measure_aqs_ro: sensor(0x%02x) is DISABLED.\n",
-			aqs_info_data->sensorType);
+			aqs_info_data->sensor_type);
 		return 0;
 	}
 	
-	aqs_info[aqs_info_data->sensorType].state = AQS_BUSY;
-	PRINTF("measure_aqs_ro: sensor(0x%02x) set to BUSY.\n", aqs_info_data->sensorType);
-	
+	aqs_info[aqs_info_data->sensor_type].state = AQS_BUSY;
+	PRINTF("measure_aqs_ro: sensor(0x%02x) set to BUSY.\n", aqs_info_data->sensor_type);
+
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+	val = adc128s022.value(aqs_info_data->measure_channel);
+	if (val == ADC128S022_ERROR){
+		PRINTF("measure_aqs_ro: sensor(0x%02x) failed to get value from ADC sensor\n", aqs_info_data->sensor_type);
+		return 0;
+	}
+	/* 12 ENOBs ADC, output is digitized level of analog signal*/
+	PRINTF("measure_aqs_ro: sensor(0x%02x) raw ADC value = %lu\n", aqs_info_data->sensor_type, val);
+	/* convert to 5v ref */
+	val *= AQS_ADC_REF;
+	val /= ADC128S022_ADC_MAX_LEVEL;
+#else
 	val = adc_zoul.value(aqs_info_data->measure_pin_mask);
 	if (val == ZOUL_SENSORS_ERROR){
-		PRINTF("measure_aqs_ro: sensor(0x%02x) failed to get value from ADC sensor\n", aqs_info_data->sensorType);
+		PRINTF("measure_aqs_ro: sensor(0x%02x) failed to get value from ADC sensor\n", aqs_info_data->sensor_type);
 		return 0;
 	}
-	PRINTF("measure_aqs: sensor(0x%02x) raw ADC value = %lu\n", aqs_info_data->sensorType, val);
+	PRINTF("measure_aqs_ro: sensor(0x%02x) raw ADC value = %lu\n", aqs_info_data->sensor_type, val);
 
 	/* 512 bit resolution, output is in mV already (significant to the tenth decimal place) */
 	/* convert 3v ref to 5v ref */
 	val *= AQS_ADC_REF;
 	val /= AQS_ADC_CROSSREF;
-	PRINTF("measure_aqs_ro: sensor(0x%02x) mv ADC value = %lu.%lu\n", aqs_info_data->sensorType, val / 10, val % 10);
+#endif
+	PRINTF("measure_aqs_ro: sensor(0x%02x) mv ADC value = %lu.%lu\n", aqs_info_data->sensor_type, val / 10, val % 10);
 	
-	val = convert_raw_to_sensor_res(aqs_info_data->sensorType, val);
-	PRINTF("measure_aqs_ro: sensor(0x%02x) sensor resistance (milli) = %lu\n", aqs_info_data->sensorType, val);
-	aqs_info[aqs_info_data->sensorType].state = AQS_INIT_PHASE;
-	PRINTF("measure_aqs_ro: sensor(0x%02x) set to AQS_INIT_PHASE.\n", aqs_info_data->sensorType);
+	val = convert_raw_to_sensor_res(aqs_info_data->sensor_type, val);
+	PRINTF("measure_aqs_ro: sensor(0x%02x) sensor resistance (milli) = %lu\n", aqs_info_data->sensor_type, val);
+	aqs_info[aqs_info_data->sensor_type].state = AQS_INIT_PHASE;
+	PRINTF("measure_aqs_ro: sensor(0x%02x) set to AQS_INIT_PHASE.\n", aqs_info_data->sensor_type);
 
 	return val;
 }
@@ -639,83 +660,96 @@ measure_aqs(const void* data_ptr)
 	aqs_info_data = (measure_aqs_data_t*)(data_ptr);
 	
 	/* make sure it is a valid sensor type */
-	if (aqs_info_data->sensorType != MQ7_SENSOR && 
-			aqs_info_data->sensorType != MQ131_SENSOR &&
-			aqs_info_data->sensorType != MQ135_SENSOR &&
-			aqs_info_data->sensorType != MQ135_SENSOR &&
-			aqs_info_data->sensorType != MICS4514_SENSOR_RED &&
-			aqs_info_data->sensorType != MICS4514_SENSOR_NOX){
+	if (aqs_info_data->sensor_type != MQ7_SENSOR &&
+			aqs_info_data->sensor_type != MQ131_SENSOR &&
+			aqs_info_data->sensor_type != MQ135_SENSOR &&
+			aqs_info_data->sensor_type != MQ135_SENSOR &&
+			aqs_info_data->sensor_type != MICS4514_SENSOR_RED &&
+			aqs_info_data->sensor_type != MICS4514_SENSOR_NOX){
 		PRINTF("measure_aqs: sensor(0x%02x) ERROR - unexpected sensor type.",
-			aqs_info_data->sensorType);
+			aqs_info_data->sensor_type);
 		return;
 	}
 	
 	/* make sure Ro is initialized */
-	if (aqs_info[aqs_info_data->sensorType].ro == 0) {
+	if (aqs_info[aqs_info_data->sensor_type].ro == 0) {
 		PRINTF("measure_aqs: sensor(0x%02x) ERROR - Ro is not initialized.",
-			aqs_info_data->sensorType);
+			aqs_info_data->sensor_type);
 		return;
 	}
 
-	if ( aqs_info[aqs_info_data->sensorType].state != AQS_BUSY &&
-		aqs_info[aqs_info_data->sensorType].state != AQS_ENABLED ){
+	if ( aqs_info[aqs_info_data->sensor_type].state != AQS_BUSY &&
+		aqs_info[aqs_info_data->sensor_type].state != AQS_ENABLED ){
 		PRINTF("measure_aqs: sensor(0x%02x) is DISABLED.\n",
-			aqs_info_data->sensorType);
+			aqs_info_data->sensor_type);
 		return;
 	}
 	
-	aqs_info[aqs_info_data->sensorType].state = AQS_BUSY;
-	PRINTF("measure_aqs: sensor(0x%02x) set to BUSY.\n", aqs_info_data->sensorType);
+	aqs_info[aqs_info_data->sensor_type].state = AQS_BUSY;
+	PRINTF("measure_aqs: sensor(0x%02x) set to BUSY.\n", aqs_info_data->sensor_type);
 	
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+	val = adc128s022.value(aqs_info_data->measure_channel);
+	if (val == ADC128S022_ERROR){
+		PRINTF("measure_aqs: sensor(0x%02x) failed to get value from ADC sensor\n", aqs_info_data->sensor_type);
+		return;
+	}
+	/* 12 ENOBs ADC, output is digitized level of analog signal*/
+	PRINTF("measure_aqs: sensor(0x%02x) raw ADC value = %llu\n", aqs_info_data->sensor_type, val);
+	/* convert to 5v ref */
+	val *= AQS_ADC_REF;
+	val /= ADC128S022_ADC_MAX_LEVEL;
+#else
 	val = adc_zoul.value(aqs_info_data->measure_pin_mask);
 	if (val == ZOUL_SENSORS_ERROR){
-		PRINTF("measure_aqs: sensor(0x%02x) failed to get value from ADC sensor\n", aqs_info_data->sensorType);
+		PRINTF("measure_aqs: sensor(0x%02x) failed to get value from ADC sensor\n", aqs_info_data->sensor_type);
 		return;
 	}
 	
-	PRINTF("measure_aqs: sensor(0x%02x) raw ADC value = %llu\n", aqs_info_data->sensorType, val);
+	PRINTF("measure_aqs: sensor(0x%02x) raw ADC value = %llu\n", aqs_info_data->sensor_type, val);
 	
 	/* 512 bit resolution, output is in mV already (significant to the tenth decimal place) */
 	/* convert 3v ref to 5v ref */
 	val *= AQS_ADC_REF;
 	val /= AQS_ADC_CROSSREF;
 
-	PRINTF("measure_aqs: sensor(0x%02x) mv ADC value = %llu.%llu\n", aqs_info_data->sensorType, val / 10, val % 10);
+	PRINTF("measure_aqs: sensor(0x%02x) mv ADC value = %llu.%llu\n", aqs_info_data->sensor_type, val / 10, val % 10);
+#endif
 	
 	PRINTF("measure_aqs: sensor(0x%02x) reference Ro = %lu.%lu\n",
-			aqs_info_data->sensorType,
-			aqs_info[aqs_info_data->sensorType].ro / 1000,
-			aqs_info[aqs_info_data->sensorType].ro % 1000);
+			aqs_info_data->sensor_type,
+			aqs_info[aqs_info_data->sensor_type].ro / 1000,
+			aqs_info[aqs_info_data->sensor_type].ro % 1000);
 
-	val = convert_raw_to_sensor_res(aqs_info_data->sensorType, val);
+	val = convert_raw_to_sensor_res(aqs_info_data->sensor_type, val);
 
 	PRINTF("measure_aqs: sensor(0x%02x) Rs = %llu.%llu\n",
-			aqs_info_data->sensorType,
+			aqs_info_data->sensor_type,
 			val / 1000,
 			val % 1000);
 	//get resistance ratio at this time, precision in 3 decimal digits
-	aqs_info[aqs_info_data->sensorType].value = val * 1000;
+	aqs_info[aqs_info_data->sensor_type].value = val * 1000;
 	PRINTF("measure_aqs: sensor(0x%02x) value = %llu\n",
-			aqs_info_data->sensorType,
-			aqs_info[aqs_info_data->sensorType].value);
-	aqs_info[aqs_info_data->sensorType].value /= aqs_info[aqs_info_data->sensorType].ro;
+			aqs_info_data->sensor_type,
+			aqs_info[aqs_info_data->sensor_type].value);
+	aqs_info[aqs_info_data->sensor_type].value /= aqs_info[aqs_info_data->sensor_type].ro;
 
 	//normalize to expected values
-	aqs_info[aqs_info_data->sensorType].value = normalize_resratio(aqs_info[aqs_info_data->sensorType].value, aqs_info_data->sensorType);
-	PRINTF("measure_aqs: sensor(0x%02x) Rs/Ro value (unnormalized) = %llu.%03llu\n", aqs_info_data->sensorType,
-			aqs_info[aqs_info_data->sensorType].value / 1000,
-			aqs_info[aqs_info_data->sensorType].value % 1000);
+	aqs_info[aqs_info_data->sensor_type].value = normalize_resratio(aqs_info[aqs_info_data->sensor_type].value, aqs_info_data->sensor_type);
+	PRINTF("measure_aqs: sensor(0x%02x) Rs/Ro value (unnormalized) = %llu.%03llu\n", aqs_info_data->sensor_type,
+			aqs_info[aqs_info_data->sensor_type].value / 1000,
+			aqs_info[aqs_info_data->sensor_type].value % 1000);
 
 	//compensate the measured value based on environment temperature/humidity (if properly set)
 	if (aqs_temperature != -32767 && aqs_humidity != 255)
-		aqs_info[aqs_info_data->sensorType].value = environment_compensate(aqs_temperature, aqs_humidity, aqs_info[aqs_info_data->sensorType].value,
-				aqs_info_data->sensorType);
+		aqs_info[aqs_info_data->sensor_type].value = environment_compensate(aqs_temperature, aqs_humidity, aqs_info[aqs_info_data->sensor_type].value,
+				aqs_info_data->sensor_type);
 
-	PRINTF("measure_aqs: sensor(0x%02x) Rs/Ro value (normalized) = %llu.%03llu\n", aqs_info_data->sensorType,
-		aqs_info[aqs_info_data->sensorType].value / 1000,
-		aqs_info[aqs_info_data->sensorType].value % 1000);
-	aqs_info[aqs_info_data->sensorType].state = AQS_ENABLED;
-	PRINTF("measure_aqs: sensor(0x%02x) set to ENABLED.\n", aqs_info_data->sensorType);
+	PRINTF("measure_aqs: sensor(0x%02x) Rs/Ro value (normalized) = %llu.%03llu\n", aqs_info_data->sensor_type,
+		aqs_info[aqs_info_data->sensor_type].value / 1000,
+		aqs_info[aqs_info_data->sensor_type].value % 1000);
+	aqs_info[aqs_info_data->sensor_type].state = AQS_ENABLED;
+	PRINTF("measure_aqs: sensor(0x%02x) set to ENABLED.\n", aqs_info_data->sensor_type);
 }
 /*------------------------------------------------------------------*/
 static void
@@ -783,12 +817,19 @@ configure(int type, int value)
 			PRINTF("AQS: configure function - MQ7_SENSOR already enabled.\n");
 			return AQS_SUCCESS;
 		}
-		
+
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+		// put your own adc definition here
+		if (adc128s022.configure(ADC128S022_INIT, MQ7_SENSOR_EXT_ADC_CHANNEL) == ADC128S022_ERROR) {
+			PRINTF("Error for AQS: configure function (MQ7_SENSOR) - Failed to configure ADC sensor.\n");
+			return AQS_ERROR;
+		}
+#else
 		if (adc_zoul.configure(SENSORS_HW_INIT, MQ7_SENSOR_PIN_MASK) == ZOUL_SENSORS_ERROR) {
 			PRINTF("Error for AQS: configure function (MQ7_SENSOR) - Failed to configure ADC sensor.\n");
 			return AQS_ERROR;
 		}
-
+#endif
 		//take control of the heating pins
 		GPIO_SOFTWARE_CONTROL(MQ7_SENSOR_HEATING_PORT_BASE, MQ7_SENSOR_HEATING_PIN_MASK);
 		ioc_set_over(MQ7_SENSOR_HEATING_PORT, MQ7_SENSOR_HEATING_PIN, IOC_OVERRIDE_DIS);
@@ -829,10 +870,18 @@ configure(int type, int value)
 			return AQS_SUCCESS;
 		}
 
-		if(adc_zoul.configure(SENSORS_HW_INIT, MQ131_SENSOR_PIN_MASK) == ZOUL_SENSORS_ERROR) {
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+		// put your own adc definition here
+		if (adc128s022.configure(ADC128S022_INIT, MQ131_SENSOR_EXT_ADC_CHANNEL) == ADC128S022_ERROR) {
 			PRINTF("Error for AQS: configure function (MQ131_SENSOR) - Failed to configure ADC sensor.\n");
 			return AQS_ERROR;
 		}
+#else
+		if (adc_zoul.configure(SENSORS_HW_INIT, MQ131_SENSOR_PIN_MASK) == ZOUL_SENSORS_ERROR) {
+			PRINTF("Error for AQS: configure function (MQ131_SENSOR) - Failed to configure ADC sensor.\n");
+			return AQS_ERROR;
+		}
+#endif
 
 		//set initial values
 		aqs_info[MQ131_SENSOR].ro = MQ131_RO_CLEAN_AIR * OHM_SCALETO_MILLIOHM;
@@ -869,10 +918,18 @@ configure(int type, int value)
 			return AQS_SUCCESS;
 		}
 
-		if(adc_zoul.configure(SENSORS_HW_INIT, MQ135_SENSOR_PIN_MASK) == ZOUL_SENSORS_ERROR) {
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+		// put your own adc definition here
+		if (adc128s022.configure(ADC128S022_INIT, MQ135_SENSOR_EXT_ADC_CHANNEL) == ADC128S022_ERROR) {
 			PRINTF("Error for AQS: configure function (MQ135_SENSOR) - Failed to configure ADC sensor.\n");
 			return AQS_ERROR;
 		}
+#else
+		if (adc_zoul.configure(SENSORS_HW_INIT, MQ135_SENSOR_PIN_MASK) == ZOUL_SENSORS_ERROR) {
+			PRINTF("Error for AQS: configure function (MQ135_SENSOR) - Failed to configure ADC sensor.\n");
+			return AQS_ERROR;
+		}
+#endif
 		//set initial values
 		aqs_info[MQ135_SENSOR].ro = MQ135_RO_CLEAN_AIR * OHM_SCALETO_MILLIOHM;
 		aqs_info[MQ135_SENSOR].state = AQS_INIT_PHASE;
@@ -914,14 +971,27 @@ configure(int type, int value)
 			return AQS_SUCCESS;
 		}
 
-		if(adc_zoul.configure(SENSORS_HW_INIT, MICS4514_SENSOR_RED_PIN_MASK) == ZOUL_SENSORS_ERROR) {
+
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+		// put your own adc definition here
+		if (adc128s022.configure(ADC128S022_INIT, MICS4514_SENSOR_RED_EXT_ADC_CHANNEL) == ADC128S022_ERROR) {
 			PRINTF("Error for AQS: configure function (MICS4514_RED) - Failed to configure ADC sensor.\n");
 			return AQS_ERROR;
 		}
-		if(adc_zoul.configure(SENSORS_HW_INIT, MICS4514_SENSOR_NOX_PIN_MASK) == ZOUL_SENSORS_ERROR) {
+		if (adc128s022.configure(ADC128S022_INIT, MICS4514_SENSOR_NOX_EXT_ADC_CHANNEL) == ADC128S022_ERROR) {
 			PRINTF("Error for AQS: configure function (MICS4514_NOX) - Failed to configure ADC sensor.\n");
 			return AQS_ERROR;
 		}
+#else
+		if (adc_zoul.configure(SENSORS_HW_INIT, MICS4514_SENSOR_RED_PIN_MASK) == ZOUL_SENSORS_ERROR) {
+			PRINTF("Error for AQS: configure function (MICS4514_RED) - Failed to configure ADC sensor.\n");
+			return AQS_ERROR;
+		}
+		if (adc_zoul.configure(SENSORS_HW_INIT, MICS4514_SENSOR_NOX_PIN_MASK) == ZOUL_SENSORS_ERROR) {
+			PRINTF("Error for AQS: configure function (MICS4514_NOX) - Failed to configure ADC sensor.\n");
+			return AQS_ERROR;
+		}
+#endif
 
 		//take control of the heating pins
 		GPIO_SOFTWARE_CONTROL(MICS4514_SENSOR_HEATING_PORT_BASE, MICS4514_SENSOR_HEATING_PIN_MASK);
@@ -1087,8 +1157,13 @@ PROCESS_THREAD(aqs_mq7_calibration_process, ev, data)
 
 	//initialization
 	rs = 0;
-	measure_aqs_data.sensorType = MQ7_SENSOR;
+	measure_aqs_data.sensor_type = MQ7_SENSOR;
+
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+	measure_aqs_data.measure_channel = MQ7_SENSOR_EXT_ADC_CHANNEL;
+#else
 	measure_aqs_data.measure_pin_mask = MQ7_SENSOR_PIN_MASK;
+#endif
 	aqs_info[MQ7_SENSOR].state = AQS_INIT_PHASE;
 
 	//check if sensor has already been initialized/calibrated
@@ -1153,8 +1228,13 @@ PROCESS_THREAD(aqs_mq131_calibration_process, ev, data)
 	//initialization
 	rs = 0;
 	sample_count = 0;
-	measure_aqs_data.sensorType = MQ131_SENSOR;
+	measure_aqs_data.sensor_type = MQ131_SENSOR;
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+	measure_aqs_data.measure_channel = MQ131_SENSOR_EXT_ADC_CHANNEL;
+#else
 	measure_aqs_data.measure_pin_mask = MQ131_SENSOR_PIN_MASK;
+#endif
+
 	aqs_info[MQ131_SENSOR].state = AQS_INIT_PHASE;
 
 	//check if sensor has already been initialized/calibrated
@@ -1214,8 +1294,13 @@ PROCESS_THREAD(aqs_mq135_calibration_process, ev, data)
 	//initialization
 	rs = 0;
 	sample_count = 0;
-	measure_aqs_data.sensorType = MQ135_SENSOR;
+	measure_aqs_data.sensor_type = MQ135_SENSOR;
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+	measure_aqs_data.measure_channel = MQ135_SENSOR_EXT_ADC_CHANNEL;
+#else
 	measure_aqs_data.measure_pin_mask = MQ135_SENSOR_PIN_MASK;
+#endif
+
 	aqs_info[MQ135_SENSOR].state = AQS_INIT_PHASE;
 
 	//check if sensor has already been initialized/calibrated
@@ -1278,10 +1363,17 @@ PROCESS_THREAD(aqs_mics4514_calibration_process, ev, data)
 	//initialization
 	rs_red = rs_nox = 0;
 	sample_count_red = sample_count_nox = 0;
-	measure_aqs_data_red.sensorType = MICS4514_SENSOR_RED;
+	measure_aqs_data_red.sensor_type = MICS4514_SENSOR_RED;
+
+	measure_aqs_data_nox.sensor_type = MICS4514_SENSOR_NOX;
+
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+	measure_aqs_data_red.measure_channel = MICS4514_SENSOR_RED_EXT_ADC_CHANNEL;
+	measure_aqs_data_nox.measure_channel = MICS4514_SENSOR_NOX_EXT_ADC_CHANNEL;
+#else
 	measure_aqs_data_red.measure_pin_mask = MICS4514_SENSOR_RED_PIN_MASK;
-	measure_aqs_data_nox.sensorType = MICS4514_SENSOR_NOX;
 	measure_aqs_data_nox.measure_pin_mask = MICS4514_SENSOR_NOX_PIN_MASK;
+#endif
 	aqs_info[MICS4514_SENSOR_RED].state = AQS_INIT_PHASE;
 	aqs_info[MICS4514_SENSOR_NOX].state = AQS_INIT_PHASE;
 
@@ -1369,8 +1461,12 @@ PROCESS_THREAD(aqs_mq7_measurement_process, ev, data)
 	}
 
 	preheatSteps = MQ7_PREHEAT_STEPS;
-	measure_aqs_data.sensorType = MQ7_SENSOR;
+	measure_aqs_data.sensor_type = MQ7_SENSOR;
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+	measure_aqs_data.measure_channel = MQ7_SENSOR_EXT_ADC_CHANNEL;
+#else
 	measure_aqs_data.measure_pin_mask = MQ7_SENSOR_PIN_MASK;
+#endif
 
 	/* take control of the heating pin */
 	GPIO_SOFTWARE_CONTROL(MQ7_SENSOR_HEATING_PORT_BASE, MQ7_SENSOR_HEATING_PIN_MASK);
@@ -1434,8 +1530,12 @@ PROCESS_THREAD(aqs_mq131_measurement_process, ev, data)
 		PROCESS_EXIT();
 	}
 	
-	measure_aqs_data.sensorType = MQ131_SENSOR;
+	measure_aqs_data.sensor_type = MQ131_SENSOR;
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+	measure_aqs_data.measure_channel = MQ131_SENSOR_EXT_ADC_CHANNEL;
+#else
 	measure_aqs_data.measure_pin_mask = MQ131_SENSOR_PIN_MASK;
+#endif
 	
 	/* pre-heat procedure */
 	PRINTF("aqs_mq131_measurement_process: pre-heat procedure started\n");
@@ -1480,8 +1580,12 @@ PROCESS_THREAD(aqs_mq135_measurement_process, ev, data)
 		PROCESS_EXIT();
 	}
 
-	measure_aqs_data.sensorType = MQ135_SENSOR;
+	measure_aqs_data.sensor_type = MQ135_SENSOR;
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+	measure_aqs_data.measure_channel = MQ135_SENSOR_EXT_ADC_CHANNEL;
+#else
 	measure_aqs_data.measure_pin_mask = MQ135_SENSOR_PIN_MASK;
+#endif
 	
 	/* pre-heat procedure */
 	PRINTF("aqs_mq135_measurement_process: pre-heat procedure started\n");
@@ -1530,11 +1634,19 @@ PROCESS_THREAD(aqs_mics4514_measurement_process, ev, data)
 		PROCESS_EXIT();
 	}
 
-	measure_aqs_red_data.sensorType = MICS4514_SENSOR_RED;
-	measure_aqs_red_data.measure_pin_mask = MICS4514_SENSOR_RED_PIN_MASK;
+	measure_aqs_red_data.sensor_type = MICS4514_SENSOR_RED;
 
-	measure_aqs_nox_data.sensorType = MICS4514_SENSOR_NOX;
+
+	measure_aqs_nox_data.sensor_type = MICS4514_SENSOR_NOX;
+
+
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+	measure_aqs_red_data.measure_channel = MICS4514_SENSOR_RED_EXT_ADC_CHANNEL;
+	measure_aqs_nox_data.measure_channel = MICS4514_SENSOR_NOX_EXT_ADC_CHANNEL;
+#else
+	measure_aqs_red_data.measure_pin_mask = MICS4514_SENSOR_RED_PIN_MASK;
 	measure_aqs_nox_data.measure_pin_mask = MICS4514_SENSOR_NOX_PIN_MASK;
+#endif
 
 	/* pre-heat procedure */
 	turn_on_heater(MICS4514_SENSOR_HEATING_PORT_BASE, MICS4514_SENSOR_HEATING_PIN_MASK, MICS4514_HEATING_TIME, &et);

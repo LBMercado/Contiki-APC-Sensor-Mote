@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include "contiki.h"
 #include "adc-sensors.h"
-#include "adc-zoul.h"
 #include "zoul-sensors.h"
 #include "dev/pm25-sensor.h"
 #include "dev/sys-ctrl.h"
@@ -12,7 +11,9 @@
 /*---------------------------------------------------------------------------*/
 #define PM25_SENSOR_LED_PORT_BASE   GPIO_PORT_TO_BASE(PM25_SENSOR_LED_CTRL_PORT)
 #define PM25_SENSOR_LED_PIN_MASK    GPIO_PIN_MASK(PM25_SENSOR_LED_CTRL_PIN)
+#if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
 #define PM25_SENSOR_OUT_PIN_MASK    GPIO_PIN_MASK(PM25_SENSOR_OUT_CTRL_PIN)
+#endif
 /*---------------------------------------------------------------------------*/
 #define DEBUG 0
 #if DEBUG
@@ -42,10 +43,17 @@ configure(int type, int value)
 				GPIO_SET_PIN(PM25_SENSOR_LED_PORT_BASE, PM25_SENSOR_LED_PIN_MASK);
 
 				/* configure the output pin*/
+#if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
 				if ( adc_zoul.configure(SENSORS_HW_INIT, PM25_SENSOR_OUT_PIN_MASK) == ZOUL_SENSORS_ERROR ){
 					PRINTF("PM25-Sensor: failed to configure output pin.\n");
 					return PM25_ERROR;
 				}
+#else
+				if ( adc128s022.configure(ADC128S022_INIT, PM25_SENSOR_OUT_EXT_ADC_CHANNEL) == ADC128S022_ERROR ){
+					PRINTF("PM25-Sensor: failed to configure output pin.\n");
+					return PM25_ERROR;
+				}
+#endif
 				enabled = 1;
 				return PM25_SUCCESS;
 			}
@@ -77,19 +85,30 @@ value(int type)
 	// note: active low IR LED Pin
 	GPIO_CLR_PIN(PM25_SENSOR_LED_PORT_BASE, PM25_SENSOR_LED_PIN_MASK);
 	clock_delay_usec(PM25_SENSOR_PULSE_DELAY);
+#if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
 	val = (uint32_t)adc_zoul.value(PM25_SENSOR_OUT_PIN_MASK);
-	
-	
 	if(val == ZOUL_SENSORS_ERROR) {
 		printf("PM25-Sensor: failed to read from ADC.\n");
 		return PM25_ERROR;
 	}
 	PRINTF("PM25-Sensor: raw adc value: %lu\n", val);
-	
 	/* the measured value is with reference to 3v, map it to 5v ref. */
 	val *= PM25_ADC_REF;
 	val /= PM25_ADC_CROSSREF;
 	// the ADC value is significant to the tenth decimal place
+#else
+	val = (uint32_t)adc128s022.value(PM25_SENSOR_OUT_EXT_ADC_CHANNEL);
+	PRINTF("PM25-Sensor: raw adc value: %lu\n", val);
+	if(val == ADC128S022_ERROR) {
+		printf("PM25-Sensor: failed to read from ADC.\n");
+		return PM25_ERROR;
+	}
+	/* 12 ENOBs ADC, output is digitized level of analog signal*/
+	/* convert to 5v ref */
+	val *= PM25_ADC_REF;
+	val /= ADC128S022_ADC_MAX_LEVEL;
+	// the ADC value is significant to the tenth decimal place
+#endif
 	PRINTF("PM25-Sensor: mv adc value: %lu.%lu\n", val / 10, val % 10);
 	//watch out for out of spec values, also consider precision of val
 	if      ( (val % 10 > 4 ? val / 10 + 1 : val / 10) < PM25_MIN_OUTPUT_MILLIVOLT){

@@ -30,7 +30,9 @@
 #include "apc-sensor-node.h"
 #include "dev/air-quality-sensor.h"
 #include "dev/anemometer-sensor.h"
+#if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
 #include "dev/shared-sensors.h"
+#endif
 /*---------------------------------------------------------------------------*/
 #define DEBUG DEBUG_PRINT
 #include "net/ip/uip-debug.h"
@@ -76,12 +78,13 @@ const uint8_t SENSOR_CALIB_TYPES[SENSOR_CALIB_COUNT] =
 #ifdef  APC_SENSOR_MOTE_ID_CONF
 #define APC_SENSOR_MOTE_ID                                APC_SENSOR_MOTE_ID_CONF
 #else
-#define APC_SENSOR_MOTE_ID                                "mote1"
+#define APC_SENSOR_MOTE_ID                                "mote"
 #endif
 /*----------------------------------------------------------------------------------*/
 /* Minimum for dht22 read intervals, consider slowest sensor */
 #define APC_SENSOR_NODE_READ_WAIT_MILLIS                  CLOCK_SECOND >> 2
 /*----------------------------------------------------------------------------------*/
+#if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
 #ifndef APC_SENSOR_NODE_AMUX_0BIT_PORT_CONF
 #define APC_SENSOR_NODE_AMUX_0BIT_PORT                    GPIO_D_NUM
 #else
@@ -96,6 +99,7 @@ const uint8_t SENSOR_CALIB_TYPES[SENSOR_CALIB_COUNT] =
 /*----------------------------------------------------------------------------------*/
 #define APC_SENSOR_NODE_AMUX_SELECT_ANEMOMETER            0
 #define APC_SENSOR_NODE_AMUX_SELECT_WIND_VANE             1
+#endif /* if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC */
 /*----------------------------------------------------------------------------------*/
 #define UIP_IP_BUF                                        ( (struct uip_ip_hdr*) & uip_buf[UIP_LLH_LEN] )
 #define UDP_CLIENT_PORT	6000
@@ -123,7 +127,7 @@ typedef struct{
 	uint8_t sensor_type;
 	uint8_t is_calibrated; //used only during calibration procedures
 	char sensor_reading[10];
-	char sensor_calib_reading[10]; //used only for read_calib_sensor
+	char sensor_calib_reading[12]; //used only for read_calib_sensor
 } sensor_info_t;
 /*----------------------------------------------------------------------------------*/
 static sensor_info_t sensor_infos[SENSOR_COUNT];
@@ -699,7 +703,9 @@ read_sensor
 		}
 		break;
 	case WIND_SPEED_T:
+#if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
 		shared_sensor_select_pin(APC_SENSOR_NODE_AMUX_SELECT_ANEMOMETER);
+#endif
 		value = anem_sensor.value(WIND_SPEED_SENSOR);
 		if (value == WIND_SENSOR_ERROR){
 			PRINTF("-----------------\n");
@@ -725,7 +731,9 @@ read_sensor
 		}
 		break;
 	case WIND_DRCTN_T:
+#if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
 		shared_sensor_select_pin(APC_SENSOR_NODE_AMUX_SELECT_WIND_VANE);
+#endif
 		value = anem_sensor.value(WIND_DIR_SENSOR);
 		if (value == WIND_SENSOR_ERROR){
 			PRINTF("-----------------\n");
@@ -1470,6 +1478,8 @@ PROCESS_THREAD(apc_sensor_node_network_init_process, ev, data)
 	leds_off(LEDS_ALL);
 	leds_on(LEDS_GREEN);
 	
+	PRINTF("Mote ID configured as %s\n", APC_SENSOR_MOTE_ID);
+
 	/* get prefix from DAG */
 	dag = rpl_get_any_dag();
 	if (dag != NULL && !uip_is_addr_unspecified(&dag->prefix_info.prefix) ){
@@ -1556,10 +1566,12 @@ PROCESS_THREAD(apc_sensor_node_collect_gather_process, ev, data)
 
 			// collect sensor calibration data
 			if (read_calib_sensors_count != SENSOR_CALIB_COUNT){
+				PRINTF(apc_sensor_node_collect_gather_process.name);
+				PRINTF(": reading calibration data.\n");
 				for (index = 0; index < SENSOR_CALIB_COUNT; index++){
 					int sensor_type = map_calib_to_sensor_type(SENSOR_CALIB_TYPES[index]);
 					PRINTF(apc_sensor_node_collect_gather_process.name);
-					PRINTF(": Calibration type: 0x%02x\n", sensor_type);
+					PRINTF(": Sensor type (for -calibration): 0x%02x\n", sensor_type);
 					if ( !is_calibrated_sensor(sensor_type) ) {
 
 						if (read_calib_sensor(sensor_type) == APC_SENSOR_OPSUCCESS)
@@ -1591,6 +1603,7 @@ PROCESS_THREAD(apc_sensor_node_en_sensors_process, ev, data)
 		PRINTF("apc_sensor_node_en_sensors_process: Sensor(0x%01x): %s\n", sensor_infos[i].sensor_type,
 		activate_sensor(sensor_infos[i].sensor_type) == APC_SENSOR_OPFAILURE ? "ERROR\0" : "OK\0" );
 	}
+#if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
 	//configure the analog multiplexer
 	uint8_t select_lines_count = SHARED_SENSOR_MAX_SELECT_LINES;
 	PRINTF("Max select lines configured to be %u\n", SHARED_SENSOR_MAX_SELECT_LINES);
@@ -1600,7 +1613,7 @@ PROCESS_THREAD(apc_sensor_node_en_sensors_process, ev, data)
 	//share the anemometer and wind vane sensors
 	shared_sensor_share_pin(&anem_sensor, APC_SENSOR_NODE_AMUX_SELECT_WIND_VANE);
 	shared_sensor_share_pin(&anem_sensor, APC_SENSOR_NODE_AMUX_SELECT_ANEMOMETER);
-
+#endif
 	print_local_dev_info();
 	leds_off(LEDS_YELLOW);
 	process_start(&apc_sensor_node_collect_gather_process, NULL);

@@ -1,11 +1,16 @@
-#include "contiki.h"
-#include "lib/sensors.h"
-#include "dev/gpio.h"
-#include "dev/adc-zoul.h"
-#include <stdio.h>
 /*--------------------------------------------------------------------------------*/
 #ifndef ANEM_H_
 #define ANEM_H_
+/*--------------------------------------------------------------------------------*/
+#include "contiki.h"
+#include "lib/sensors.h"
+#include "dev/gpio.h"
+#include <stdio.h>
+#if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+#include "dev/adc-zoul.h"
+#else
+#include "dev/adc128s022.h"
+#endif
 /*--------------------------------------------------------------------------------*/
 //Available sensors to use
 #define WIND_SPEED_SENSOR             0x00 // m/s
@@ -30,7 +35,26 @@
 //Sensor states
 #define WIND_SENSOR_ENABLED           0x01
 /*--------------------------------------------------------------------------------*/
-//Pin configuration
+/*------------------------External ADC Definitions--------------------------------*/
+/*--------------------------------------------------------------------------------*/
+#if ADC_SENSORS_CONF_USE_EXTERNAL_ADC
+/*--------------------------------------------------------------------------------*/
+#ifdef WIND_SPEED_SENSOR_CONF_EXT_ADC_CHANNEL
+#define WIND_SPEED_SENSOR_EXT_ADC_CHANNEL       WIND_SPEED_SENSOR_CONF_EXT_ADC_CHANNEL
+#else
+#define WIND_SPEED_SENSOR_EXT_ADC_CHANNEL       6
+#endif
+/*--------------------------------------------------------------------------------*/
+#ifdef WIND_DIR_SENSOR_CONF_EXT_ADC_CHANNEL
+#define WIND_DIR_SENSOR_EXT_ADC_CHANNEL         WIND_DIR_SENSOR_CONF_EXT_ADC_CHANNEL
+#else
+#define WIND_DIR_SENSOR_EXT_ADC_CHANNEL         7
+#endif
+/*--------------------------------------------------------------------------------*/
+/*------------------------Internal ADC Definitions--------------------------------*/
+/*--------------------------------------------------------------------------------*/
+#else
+/*--------------------------------------------------------------------------------*/
 #ifdef WIND_SPEED_SENSOR_CONF_CTRL_PIN
 #define WIND_SPEED_SENSOR_CTRL_PIN    WIND_SPEED_SENSOR_CONF_CTRL_PIN
 #else 
@@ -42,6 +66,8 @@
 #else
 #define WIND_DIR_SENSOR_CTRL_PIN      ADC_SENSORS_ADC5_PIN //PA7
 #endif
+/*--------------------------------------------------------------------------------*/
+#endif /* if ADC_SENSORS_CONF_USE_EXTERNAL_ADC*/
 /*--------------------------------------------------------------------------------*/
 //initial values
 /* initial wind sensor position which can be also ordinal direction */
