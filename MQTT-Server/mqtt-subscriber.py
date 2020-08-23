@@ -12,7 +12,7 @@ SERVER_ADDR = "fd00::1"
 MQTT_PORT = 1883
 KEEP_ALIVE_TIME = 60
 TOP_LEVEL_TOPIC = "apc-iot"
-SUBTOPICS = ["036", "056"]
+SUBTOPICS = ["113", "056"]
 QOS_LEVEL = 0
 client = mqtt.Client(SUBSCRIBER_ID, protocol=mqtt.MQTTv31)
 """ Database Parameters """
@@ -23,7 +23,7 @@ DB_COLLECTION = "apc_data"
 dataLogic = DataAccess(DB_ADDR, DB_PORT, DB_COLLECTION)
 """ Weather API Parameters """
 api_key = weather_access.get_api_key()
-LOCATION = "Manila,ph"
+LOCATION_ID = "1729525"
 """ State Machine Variables """
 state = 0
 MAX_STATES = len(SUBTOPICS)
@@ -74,15 +74,23 @@ def on_message(client, userdata, message):
                 return
 
             # add weather field
-            weather = weather_access.get_weather(api_key, LOCATION)
+            weather = weather_access.get_weather_with_id(api_key, LOCATION_ID)
             if weather is not None:
-                weatherList = []
-                for weatherInfo in weather:
-                    weatherList.append(weatherInfo['main'])
-                document['weather'] = weatherList
+                weather_params = {}
+
+                for key, val in weather.items():
+                    if key == 'weather':
+                        weather_conditions = []
+                        for weather_info in weather['weather']:
+                            weather_conditions.append(weather_info['main'])
+                        weather_params['api_weather'] = weather_conditions
+                    elif key == 'wind':
+                        weather_params['api_wind'] = val
+
+                # merge the api weather data with the current data we have
+                document.update(weather_params)
             else:
                 print("Unable to access weather API")
-                document['weather'] = []
 
             # add the date field
             document['date'] = datetime.now()
