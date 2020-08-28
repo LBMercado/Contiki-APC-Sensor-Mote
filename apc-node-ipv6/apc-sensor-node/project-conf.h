@@ -4,8 +4,13 @@
 /*----------------------------------------------------------------*/
 /*------------------SENSOR-CONFIGURATION-------------------------*/
 /*----------------------------------------------------------------*/
-// make a reading every 5 minutes
-#define APC_SENSOR_NODE_READ_INTERVAL_SECONDS_CONF                  300
+// make a reading every 2 minutes
+#define APC_SENSOR_NODE_READ_INTERVAL_SECONDS_CONF                  120
+// publish readings every 20 minutes
+#define PUBLISH_CONF_INTERVAL_SEC                                   1200
+/* designated id for mote */
+#define MOTE_ID                         113
+#define FORCE_CALIBRATION               0
 
 /* Use an external ADC chip (ADC128S022)
  * - Set to 1 to use external ADC chip, refer to the header file (adc128s022.h) for setting up the adc chip driver
@@ -70,9 +75,26 @@
 /* reference resistances measured on clean air
  * set to zero to force calibration
 */
+#if !FORCE_CALIBRATION
+#if MOTE_ID == 056
+#define MQ131_CONF_RO_CLEAN_AIR         422852.364
+#define MICS4514_NOX_CONF_RO_CLEAN_AIR  11712.528
+#define MICS4514_RED_CONF_RO_CLEAN_AIR  247027.590
+#elif MOTE_ID == 113
+#define MQ131_CONF_RO_CLEAN_AIR         141932.170
+#define MICS4514_NOX_CONF_RO_CLEAN_AIR  9293.639
+#define MICS4514_RED_CONF_RO_CLEAN_AIR  187759.596
+#else
 #define MQ131_CONF_RO_CLEAN_AIR         0
 #define MICS4514_NOX_CONF_RO_CLEAN_AIR  0
 #define MICS4514_RED_CONF_RO_CLEAN_AIR  0
+#endif /* MOTE_ID */
+#else
+#define MQ131_CONF_RO_CLEAN_AIR         0
+#define MICS4514_NOX_CONF_RO_CLEAN_AIR  0
+#define MICS4514_RED_CONF_RO_CLEAN_AIR  0
+#endif /* !FORCE_CALIBRATION */
+
 
 /* load resistances for forming the voltage divider in measuring
  * sensor output
@@ -85,7 +107,6 @@
 /*------------------------IP-CONFIGURATION------------------------*/
 /*----------------------------------------------------------------*/
 #define MQTT_CONF_BROKER_IP_ADDR        "FD00::1"
-#define MOTE_ID                         113
 #if MOTE_ID == 056
 #define APC_SENSOR_ADDRESS_CONF         "FD00::212:4B00:194A:51E1"
 #define APC_SENSOR_MOTE_ID_CONF         "056"

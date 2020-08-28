@@ -197,10 +197,14 @@ static uint8_t state;
 #define CONFIG_CMD_TYPE_LEN       8
 #define CONFIG_IP_ADDR_STR_LEN   64
 /*---------------------------------------------------------------------------*/
-#define RSSI_MEASURE_INTERVAL_MAX 604800 /* secs: 7 days */
-#define RSSI_MEASURE_INTERVAL_MIN     5  /* secs */
-#define PUBLISH_INTERVAL_MAX      604800 /* secs: 7 days */
-#define PUBLISH_INTERVAL_MIN         600 /* secs: 10 mins */
+#define RSSI_MEASURE_INTERVAL_MAX    604800 /* secs: 7 days */
+#define RSSI_MEASURE_INTERVAL_MIN    5      /* secs */
+#define PUBLISH_INTERVAL_MAX         604800 /* secs: 7 days */
+#ifndef PUBLISH_CONF_INTERVAL_SEC
+#define PUBLISH_INTERVAL_MIN         1200   /* secs: 20 mins */
+#else
+#define PUBLISH_INTERVAL_MIN         PUBLISH_CONF_INTERVAL_SEC
+#endif
 /*---------------------------------------------------------------------------*/
 /* A timeout used when waiting to connect to a network */
 #define NET_CONNECT_PERIODIC        (CLOCK_SECOND >> 2)
@@ -717,8 +721,8 @@ read_sensor
 		else {
 			sprintf(sensor_infos[index].sensor_reading,
 			"%d.%02d",
-			value,
-			value
+			value / 100,
+			value % 100
 			);
 			PRINTF("-----------------\n");
 			PRINTF("read_sensor: WIND_SPEED_T \n");
