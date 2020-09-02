@@ -59,7 +59,7 @@ class _SwitchTranslator:
     # reference datasheet approximate values for MQ131 PPB (O3)
     MQ131_RESRATIO_MIN = 1.25
     MQ131_RESRATIO_MAX = 8
-    MQ131_RESRATIO_BOUNDARIES = (MQ131_RESRATIO_MAX, 6, 4, 2.75, 2, MQ131_RESRATIO_MIN)
+    MQ131_RESRATIO_BOUNDARIES = (MQ131_RESRATIO_MIN, 2, 2.75, 4, 6, MQ131_RESRATIO_MAX)
     MQ131_PPB_MIN = 10
     MQ131_PPB_MAX = 1000
     MQ131_PPB_BOUNDARIES = (MQ131_PPB_MIN, 50, 100, 200, 500, MQ131_PPB_MAX)
@@ -123,17 +123,16 @@ class _SwitchTranslator:
             print('mq131_translate: WARNING - raw_value of value {} out of bounds, maximum value {} set.'
                   .format(raw_value, _SwitchTranslator.MQ131_RESRATIO_MAX))
             raw_value = _SwitchTranslator.MQ131_RESRATIO_MAX
-        # Compare from the top since the boundaries are in descending order
+        # Compare from the bottom since the boundaries are in ascending order
         boundary_len = len(_SwitchTranslator.MQ131_RESRATIO_BOUNDARIES)
-        boundary_max_index = boundary_len - 1
-        for index in range(1, boundary_len):
+        for index in range(1, boundary_len - 1):
             if raw_value - _SwitchTranslator.RESRATIO_TOLERANCE <= \
-                    _SwitchTranslator.MQ131_RESRATIO_BOUNDARIES[boundary_max_index - index]:
+                    _SwitchTranslator.MQ131_RESRATIO_BOUNDARIES[index]:
                 computed_value = _SwitchTranslator._get_log_log_function(
-                    x_comp_0=_SwitchTranslator.MQ131_RESRATIO_BOUNDARIES[boundary_max_index - index],
-                    x_comp_1=_SwitchTranslator.MQ131_RESRATIO_BOUNDARIES[boundary_max_index - index + 1],
-                    y_comp_0=_SwitchTranslator.MQ131_PPB_BOUNDARIES[boundary_max_index - index],
-                    y_comp_1=_SwitchTranslator.MQ131_PPB_BOUNDARIES[boundary_max_index - index + 1]
+                    x_comp_0=_SwitchTranslator.MQ131_RESRATIO_BOUNDARIES[index - 1],
+                    x_comp_1=_SwitchTranslator.MQ131_RESRATIO_BOUNDARIES[index],
+                    y_comp_0=_SwitchTranslator.MQ131_PPB_BOUNDARIES[index - 1],
+                    y_comp_1=_SwitchTranslator.MQ131_PPB_BOUNDARIES[index]
                 )(raw_value)
 
                 return _SwitchTranslator._switch_units(computed_value, SensorUnit.PPB, unit)
