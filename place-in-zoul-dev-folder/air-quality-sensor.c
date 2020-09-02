@@ -20,10 +20,12 @@
 #define MICS4514_SENSOR_HEATING_PORT_BASE        GPIO_PORT_TO_BASE(MICS4514_SENSOR_HEATING_PORT)
 /*------------------------------------------------------------------*/
 //values for calibration
-#define CALIBRATION_SAMPLE_COUNT 100 //number of samples before finalizing calibration values
+#define CALIBRATION_SAMPLE_COUNT 50 //number of samples before finalizing calibration values
 /*------------------------------------------------------------------*/
 // tolerance in 3 decimal digit precision
 #define RESRATIO_TOLERANCE       1
+// tolerance for temperatures beyond the limits specified for temperature compensation
+#define TEMPERATURE_TOLERANCE    20
 /*------------------------------------------------------------------*/
 /*Scaling Factors*/
 //scaling factors for resistances
@@ -199,6 +201,14 @@ allocate_calibrate_event()
 	}
 }
 /*------------------------------------------------------------------*/
+/* Get linear function value given the following linear parameters
+ * @param: y_comp_0 = first y-component
+ * @param: y_comp_1 = second y-component
+ * @param: x_comp_0 = first x-component
+ * @param: x_comp_1 = second x-component
+ * @param: x_value = set x-value to compute y-value for
+ * Note: this function does not consider negative functions
+ * */
 static uint32_t get_linear_function_value(int16_t y_comp_0, int16_t y_comp_1, int16_t x_comp_0, int16_t x_comp_1, float x_value)
 {
 	return (uint32_t)(y_comp_0 + (( y_comp_1 -  y_comp_0) / (float)( x_comp_1 - x_comp_0 )) * ( x_value - x_comp_0 ));
@@ -219,234 +229,163 @@ static uint32_t environment_compensate(int16_t temp, uint8_t hum, uint32_t res_r
 	switch(type){
 		case MQ7_SENSOR:
 			max_idx = MQ7_DEP_BOUNDARIES_SIZE - 1;
-			// make sure that temperature falls within boundary
-			if (true_temp < MQ7_TEMP_DEP_MIN || true_temp > MQ7_TEMP_DEP_MAX) {
+			// make sure that temperature falls at a reasonable tolerance within boundaries
+			if (true_temp + TEMPERATURE_TOLERANCE < MQ7_TEMP_DEP_MIN || true_temp - TEMPERATURE_TOLERANCE > MQ7_TEMP_DEP_MAX){
 				PRINTF("environment_compensate: WARNING - temperature falls outside boundaries. Return uncompensated value.\n");
 				return res_ratio;
 			}
-			// falls below 2nd curve
-			if ( hum > (MQ7_RH_DEP_CURVE_1 + MQ7_RH_DEP_CURVE_2) / 2) {
-				// case 1: falls below minimum boundary, extrapolate
-				if (res_ratio - RESRATIO_TOLERANCE <= MQ7_RESRATIO_DEP_BOUNDARIES_2[max_idx]) {
-					PRINTF("environment_compensate: WARNING - resratio falls below boundaries (type: 0x%x).\n", type);
-					return get_linear_function_value(MQ7_RESRATIO_DEP_BOUNDARIES_2[max_idx - 1],
-							MQ7_RESRATIO_DEP_BOUNDARIES_2[max_idx],
-							MQ7_TEMP_DEP_BOUNDARIES[max_idx - 1],
-							MQ7_TEMP_DEP_BOUNDARIES[max_idx],
+
+			// case 1 & 2: either falls below minimum boundary (must extrapolate) or within boundaries
+			for (uint8_t idx = 1; idx <= max_idx; idx++){
+				if (true_temp <= MQ7_TEMP_DEP_BOUNDARIES[idx]) {
+					// check if it falls under 1st humidity curve
+					if (hum <= (MQ7_RH_DEP_CURVE_1 + MQ7_RH_DEP_CURVE_2) / 2) {
+						return get_linear_function_value(MQ7_RESRATIO_DEP_BOUNDARIES_1[idx - 1],
+							MQ7_RESRATIO_DEP_BOUNDARIES_1[idx],
+							MQ7_TEMP_DEP_BOUNDARIES[idx - 1],
+							MQ7_TEMP_DEP_BOUNDARIES[idx],
 							true_temp) * res_ratio / 1000;
-				}
-
-				// case 2: falls within boundaries
-				for (uint8_t idx = max_idx - 1; idx >= 0; idx--){
-					if (res_ratio - RESRATIO_TOLERANCE <= MQ7_RESRATIO_DEP_BOUNDARIES_2[idx])
-						return get_linear_function_value(MQ7_RESRATIO_DEP_BOUNDARIES_2[idx],
-								MQ7_RESRATIO_DEP_BOUNDARIES_2[idx + 1],
-								MQ7_TEMP_DEP_BOUNDARIES[idx],
-								MQ7_TEMP_DEP_BOUNDARIES[idx + 1],
-								true_temp) * res_ratio / 1000;
-				}
-
-				// case 3: falls above maximum boundary, extrapolate
-				PRINTF("environment_compensate: WARNING - resratio falls above boundaries (type: 0x%x).\n", type);
-				return get_linear_function_value(MQ7_RESRATIO_DEP_BOUNDARIES_2[0],
-						MQ7_RESRATIO_DEP_BOUNDARIES_2[1],
-						MQ7_TEMP_DEP_BOUNDARIES[0],
-						MQ7_TEMP_DEP_BOUNDARIES[1],
-						true_temp) * res_ratio / 1000;
-
-			} // falls below 1st curve
-			else {
-				// case 1: falls below minimum boundary, extrapolate
-				if (res_ratio - RESRATIO_TOLERANCE <= MQ7_RESRATIO_DEP_BOUNDARIES_1[max_idx]) {
-					PRINTF("environment_compensate: WARNING - resratio falls below boundaries (type: 0x%x).\n", type);
-					return get_linear_function_value(MQ7_RESRATIO_DEP_BOUNDARIES_1[max_idx - 1],
-							MQ7_RESRATIO_DEP_BOUNDARIES_1[max_idx],
-							MQ7_TEMP_DEP_BOUNDARIES[max_idx - 1],
-							MQ7_TEMP_DEP_BOUNDARIES[max_idx],
+					}
+					// falls under 2nd humidity curve
+					else
+					{
+						return get_linear_function_value(MQ7_RESRATIO_DEP_BOUNDARIES_2[idx - 1],
+							MQ7_RESRATIO_DEP_BOUNDARIES_2[idx],
+							MQ7_TEMP_DEP_BOUNDARIES[idx - 1],
+							MQ7_TEMP_DEP_BOUNDARIES[idx],
 							true_temp) * res_ratio / 1000;
+					}
 				}
-
-				// case 2: falls within boundaries
-				for (uint8_t idx = max_idx - 1; idx >= 0; idx--){
-					if (res_ratio - RESRATIO_TOLERANCE <= MQ7_RESRATIO_DEP_BOUNDARIES_1[idx])
-						return get_linear_function_value(MQ7_RESRATIO_DEP_BOUNDARIES_1[idx],
-								MQ7_RESRATIO_DEP_BOUNDARIES_1[idx + 1],
-								MQ7_TEMP_DEP_BOUNDARIES[idx],
-								MQ7_TEMP_DEP_BOUNDARIES[idx + 1],
-								true_temp) * res_ratio / 1000;
-				}
-
-				// case 3: falls above maximum boundary, extrapolate
-				PRINTF("environment_compensate: WARNING - resratio falls above boundaries (type: 0x%x).\n", type);
-				return get_linear_function_value(MQ7_RESRATIO_DEP_BOUNDARIES_1[0],
-						MQ7_RESRATIO_DEP_BOUNDARIES_1[1],
-						MQ7_TEMP_DEP_BOUNDARIES[0],
-						MQ7_TEMP_DEP_BOUNDARIES[1],
-						true_temp) * res_ratio / 1000;
+			}
+			// case 3: falls above maximum boundary (must extrapolate)
+			// check if it falls under 1st humidity curve
+			if (hum <= (MQ7_RH_DEP_CURVE_1 + MQ7_RH_DEP_CURVE_2) / 2) {
+				return get_linear_function_value(MQ7_RESRATIO_DEP_BOUNDARIES_1[max_idx - 1],
+					MQ7_RESRATIO_DEP_BOUNDARIES_1[max_idx],
+					MQ7_TEMP_DEP_BOUNDARIES[max_idx - 1],
+					MQ7_TEMP_DEP_BOUNDARIES[max_idx],
+					true_temp) * res_ratio / 1000;
+			}
+			// falls under 2nd humidity curve
+			else
+			{
+				return get_linear_function_value(MQ7_RESRATIO_DEP_BOUNDARIES_2[max_idx - 1],
+					MQ7_RESRATIO_DEP_BOUNDARIES_2[max_idx],
+					MQ7_TEMP_DEP_BOUNDARIES[max_idx - 1],
+					MQ7_TEMP_DEP_BOUNDARIES[max_idx],
+					true_temp) * res_ratio / 1000;
 			}
 			break;
 		case MQ131_SENSOR:
 			max_idx = MQ131_DEP_BOUNDARIES_SIZE - 1;
 			// make sure that temperature falls within boundary
-			if (true_temp < MQ131_TEMP_DEP_MIN || true_temp > MQ131_TEMP_DEP_MAX) {
+			if (true_temp + TEMPERATURE_TOLERANCE < MQ131_TEMP_DEP_MIN || true_temp - TEMPERATURE_TOLERANCE > MQ131_TEMP_DEP_MAX) {
 				PRINTF("environment_compensate: WARNING - temperature falls outside boundaries. Return uncompensated value.\n");
 				return res_ratio;
 			}
-			// falls in 1st curve
-			if ( hum <= (MQ131_RH_DEP_CURVE_1 + MQ131_RH_DEP_CURVE_2) / 2) {
-				// case 1: falls below minimum boundary, extrapolate
-				if (res_ratio - RESRATIO_TOLERANCE <= MQ131_RESRATIO_DEP_BOUNDARIES_1[max_idx]) {
-					PRINTF("environment_compensate: WARNING - resratio falls below boundaries (type: 0x%x).\n", type);
-					return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_1[max_idx - 1],
-							MQ131_RESRATIO_DEP_BOUNDARIES_1[max_idx],
-							MQ131_TEMP_DEP_BOUNDARIES[max_idx - 1],
-							MQ131_TEMP_DEP_BOUNDARIES[max_idx],
+			// case 1 & 2: either falls below minimum boundary (must extrapolate) or within boundaries
+			for (uint8_t idx = 1; idx <= max_idx; idx++){
+				if (true_temp <= MQ131_TEMP_DEP_BOUNDARIES[idx]) {
+					// check if it falls under 1st humidity curve
+					if (hum <= (MQ131_RH_DEP_CURVE_1 + MQ131_RH_DEP_CURVE_2) / 2) {
+						return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_1[idx - 1],
+							MQ131_RESRATIO_DEP_BOUNDARIES_1[idx],
+							MQ131_TEMP_DEP_BOUNDARIES[idx - 1],
+							MQ131_TEMP_DEP_BOUNDARIES[idx],
 							true_temp) * res_ratio / 1000;
-				}
-
-				// case 2: falls within boundaries
-				for (uint8_t idx = max_idx - 1; idx >= 0; idx--){
-					if (res_ratio - RESRATIO_TOLERANCE <= MQ131_RESRATIO_DEP_BOUNDARIES_1[idx])
-						return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_1[idx],
-								MQ131_RESRATIO_DEP_BOUNDARIES_1[idx + 1],
-								MQ131_TEMP_DEP_BOUNDARIES[idx],
-								MQ131_TEMP_DEP_BOUNDARIES[idx + 1],
-								true_temp) * res_ratio / 1000;
-				}
-
-				// case 3: falls above maximum boundary, extrapolate
-				PRINTF("environment_compensate: WARNING - resratio falls above boundaries (type: 0x%x).\n", type);
-				return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_1[0],
-						MQ131_RESRATIO_DEP_BOUNDARIES_1[1],
-						MQ131_TEMP_DEP_BOUNDARIES[0],
-						MQ131_TEMP_DEP_BOUNDARIES[1],
-						true_temp) * res_ratio / 1000;
-
-			} // falls in 2nd curve
-			else if (hum < (MQ131_RH_DEP_CURVE_2 + MQ131_RH_DEP_CURVE_3) / 2) {
-				// case 1: falls below minimum boundary, extrapolate
-				if (res_ratio - RESRATIO_TOLERANCE <= MQ131_RESRATIO_DEP_BOUNDARIES_2[max_idx]) {
-					PRINTF("environment_compensate: WARNING - resratio falls below boundaries (type: 0x%x).\n", type);
-					return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_2[max_idx - 1],
-							MQ131_RESRATIO_DEP_BOUNDARIES_2[max_idx],
-							MQ131_TEMP_DEP_BOUNDARIES[max_idx - 1],
-							MQ131_TEMP_DEP_BOUNDARIES[max_idx],
+					}
+					// check if it falls under 2nd humidity curve
+					else if (hum <= (MQ131_RH_DEP_CURVE_2 + MQ131_RH_DEP_CURVE_3) / 2)
+					{
+						return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_2[idx - 1],
+							MQ131_RESRATIO_DEP_BOUNDARIES_2[idx],
+							MQ131_TEMP_DEP_BOUNDARIES[idx - 1],
+							MQ131_TEMP_DEP_BOUNDARIES[idx],
 							true_temp) * res_ratio / 1000;
+					}
+					// falls under 3rd humidity curve
+					else {
+						return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_3[idx - 1],
+							MQ131_RESRATIO_DEP_BOUNDARIES_3[idx],
+							MQ131_TEMP_DEP_BOUNDARIES[idx - 1],
+							MQ131_TEMP_DEP_BOUNDARIES[idx],
+							true_temp) * res_ratio / 1000;
+					}
 				}
-
-				// case 2: falls within boundaries
-				for (uint8_t idx = max_idx - 1; idx >= 0; idx--){
-					if (res_ratio - RESRATIO_TOLERANCE <= MQ131_RESRATIO_DEP_BOUNDARIES_2[idx])
-						return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_2[idx],
-								MQ131_RESRATIO_DEP_BOUNDARIES_2[idx + 1],
-								MQ131_TEMP_DEP_BOUNDARIES[idx],
-								MQ131_TEMP_DEP_BOUNDARIES[idx + 1],
-								true_temp) * res_ratio / 1000;
-				}
-
-				// case 3: falls above maximum boundary, extrapolate
-				PRINTF("environment_compensate: WARNING - resratio falls above boundaries (type: 0x%x).\n", type);
-				return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_2[0],
-						MQ131_RESRATIO_DEP_BOUNDARIES_2[1],
-						MQ131_TEMP_DEP_BOUNDARIES[0],
-						MQ131_TEMP_DEP_BOUNDARIES[1],
-						true_temp) * res_ratio / 1000;
 			}
-			else { // falls in 3rd curve
-				// case 1: falls below minimum boundary, extrapolate
-				if (res_ratio - RESRATIO_TOLERANCE <= MQ131_RESRATIO_DEP_BOUNDARIES_3[max_idx]) {
-					PRINTF("environment_compensate: WARNING - resratio falls below boundaries (type: 0x%x).\n", type);
-					return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_3[max_idx - 1],
-							MQ131_RESRATIO_DEP_BOUNDARIES_3[max_idx],
-							MQ131_TEMP_DEP_BOUNDARIES[max_idx - 1],
-							MQ131_TEMP_DEP_BOUNDARIES[max_idx],
-							true_temp) * res_ratio / 1000;
-				}
-
-				// case 2: falls within boundaries
-				for (uint8_t idx = max_idx - 1; idx >= 0; idx--){
-					if (res_ratio - RESRATIO_TOLERANCE <= MQ131_RESRATIO_DEP_BOUNDARIES_3[idx])
-						return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_3[idx],
-								MQ131_RESRATIO_DEP_BOUNDARIES_3[idx + 1],
-								MQ131_TEMP_DEP_BOUNDARIES[idx],
-								MQ131_TEMP_DEP_BOUNDARIES[idx + 1],
-								true_temp) * res_ratio / 1000;
-				}
-
-				// case 3: falls above maximum boundary, extrapolate
-				PRINTF("environment_compensate: WARNING - resratio falls above boundaries (type: 0x%x).\n", type);
-				return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_3[0],
-						MQ131_RESRATIO_DEP_BOUNDARIES_3[1],
-						MQ131_TEMP_DEP_BOUNDARIES[0],
-						MQ131_TEMP_DEP_BOUNDARIES[1],
-						true_temp) * res_ratio / 1000;
+			// case 3: falls above maximum boundary (must extrapolate)
+			// check if it falls under 1st humidity curve
+			if (hum <= (MQ131_RH_DEP_CURVE_1 + MQ131_RH_DEP_CURVE_2) / 2) {
+				return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_1[max_idx - 1],
+					MQ131_RESRATIO_DEP_BOUNDARIES_1[max_idx],
+					MQ131_TEMP_DEP_BOUNDARIES[max_idx - 1],
+					MQ131_TEMP_DEP_BOUNDARIES[max_idx],
+					true_temp) * res_ratio / 1000;
+			}
+			// check if it falls under 2nd humidity curve
+			else if (hum <= (MQ131_RH_DEP_CURVE_2 + MQ131_RH_DEP_CURVE_3) / 2)
+			{
+				return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_2[max_idx - 1],
+					MQ131_RESRATIO_DEP_BOUNDARIES_2[max_idx],
+					MQ131_TEMP_DEP_BOUNDARIES[max_idx - 1],
+					MQ131_TEMP_DEP_BOUNDARIES[max_idx],
+					true_temp) * res_ratio / 1000;
+			}
+			// falls under 3rd humidity curve
+			else {
+				return get_linear_function_value(MQ131_RESRATIO_DEP_BOUNDARIES_3[max_idx - 1],
+					MQ131_RESRATIO_DEP_BOUNDARIES_3[max_idx],
+					MQ131_TEMP_DEP_BOUNDARIES[max_idx - 1],
+					MQ131_TEMP_DEP_BOUNDARIES[max_idx],
+					true_temp) * res_ratio / 1000;
 			}
 			break;
 		case MQ135_SENSOR:
 			max_idx = MQ135_DEP_BOUNDARIES_SIZE - 1;
 			// make sure that temperature falls within boundary
-			if (true_temp < MQ135_TEMP_DEP_MIN || true_temp > MQ135_TEMP_DEP_MAX) {
+			if (true_temp + TEMPERATURE_TOLERANCE < MQ135_TEMP_DEP_MIN || true_temp - TEMPERATURE_TOLERANCE > MQ135_TEMP_DEP_MAX) {
 				PRINTF("environment_compensate: WARNING - temperature falls outside boundaries. Return uncompensated value.\n");
 				return res_ratio;
 			}
-			// falls in 1st curve
-			if ( hum <= (MQ135_RH_DEP_CURVE_1 + MQ135_RH_DEP_CURVE_2) / 2) {
-				// case 1: falls below minimum boundary, extrapolate
-				if (res_ratio - RESRATIO_TOLERANCE <= MQ135_RESRATIO_DEP_BOUNDARIES_1[max_idx]) {
-					PRINTF("environment_compensate: WARNING - resratio falls below boundaries (type: 0x%x).\n", type);
-					return get_linear_function_value(MQ135_RESRATIO_DEP_BOUNDARIES_1[max_idx - 1],
-							MQ135_RESRATIO_DEP_BOUNDARIES_1[max_idx],
-							MQ135_TEMP_DEP_BOUNDARIES[max_idx - 1],
-							MQ135_TEMP_DEP_BOUNDARIES[max_idx],
+			// case 1 & 2: either falls below minimum boundary (must extrapolate) or within boundaries
+			for (uint8_t idx = 1; idx <= max_idx; idx++){
+				if (true_temp <= MQ135_TEMP_DEP_BOUNDARIES[idx]) {
+					// check if it falls under 1st humidity curve
+					if (hum <= (MQ135_RH_DEP_CURVE_1 + MQ135_RH_DEP_CURVE_2) / 2) {
+						return get_linear_function_value(MQ135_RESRATIO_DEP_BOUNDARIES_1[idx - 1],
+							MQ135_RESRATIO_DEP_BOUNDARIES_1[idx],
+							MQ135_TEMP_DEP_BOUNDARIES[idx - 1],
+							MQ135_TEMP_DEP_BOUNDARIES[idx],
 							true_temp) * res_ratio / 1000;
+					}
+					// falls under 2nd humidity curve
+					else
+					{
+						return get_linear_function_value(MQ135_RESRATIO_DEP_BOUNDARIES_2[idx - 1],
+							MQ135_RESRATIO_DEP_BOUNDARIES_2[idx],
+							MQ135_TEMP_DEP_BOUNDARIES[idx - 1],
+							MQ135_TEMP_DEP_BOUNDARIES[idx],
+							true_temp) * res_ratio / 1000;
+					}
 				}
-
-				// case 2: falls within boundaries
-				for (uint8_t idx = max_idx - 1; idx >= 0; idx--){
-					if (res_ratio - RESRATIO_TOLERANCE <= MQ135_RESRATIO_DEP_BOUNDARIES_1[idx])
-						return get_linear_function_value(MQ135_RESRATIO_DEP_BOUNDARIES_1[idx],
-								MQ135_RESRATIO_DEP_BOUNDARIES_1[idx + 1],
-								MQ135_TEMP_DEP_BOUNDARIES[idx],
-								MQ135_TEMP_DEP_BOUNDARIES[idx + 1],
-								true_temp) * res_ratio / 1000;
-				}
-
-				// case 3: falls above maximum boundary, extrapolate
-				PRINTF("environment_compensate: WARNING - resratio falls above boundaries (type: 0x%x).\n", type);
-				return get_linear_function_value(MQ135_RESRATIO_DEP_BOUNDARIES_1[0],
-						MQ135_RESRATIO_DEP_BOUNDARIES_1[1],
-						MQ135_TEMP_DEP_BOUNDARIES[0],
-						MQ135_TEMP_DEP_BOUNDARIES[1],
-						true_temp) * res_ratio / 1000;
 			}
-			else { // falls in 2nd curve
-				// case 1: falls below minimum boundary, extrapolate
-				if (res_ratio - RESRATIO_TOLERANCE <= MQ135_RESRATIO_DEP_BOUNDARIES_2[max_idx]) {
-					PRINTF("environment_compensate: WARNING - resratio falls below boundaries (type: 0x%x).\n", type);
-					return get_linear_function_value(MQ135_RESRATIO_DEP_BOUNDARIES_2[max_idx - 1],
-							MQ135_RESRATIO_DEP_BOUNDARIES_2[max_idx],
-							MQ135_TEMP_DEP_BOUNDARIES[max_idx - 1],
-							MQ135_TEMP_DEP_BOUNDARIES[max_idx],
-							true_temp) * res_ratio / 1000;
-				}
-
-				// case 2: falls within boundaries
-				for (uint8_t idx = max_idx - 1; idx >= 0; idx--){
-					if (res_ratio - RESRATIO_TOLERANCE <= MQ135_RESRATIO_DEP_BOUNDARIES_2[idx])
-						return get_linear_function_value(MQ135_RESRATIO_DEP_BOUNDARIES_2[idx],
-								MQ135_RESRATIO_DEP_BOUNDARIES_2[idx + 1],
-								MQ135_TEMP_DEP_BOUNDARIES[idx],
-								MQ135_TEMP_DEP_BOUNDARIES[idx + 1],
-								true_temp) * res_ratio / 1000;
-				}
-
-				// case 3: falls above maximum boundary, extrapolate
-				PRINTF("environment_compensate: WARNING - resratio falls above boundaries (type: 0x%x).\n", type);
-				return get_linear_function_value(MQ135_RESRATIO_DEP_BOUNDARIES_2[0],
-						MQ135_RESRATIO_DEP_BOUNDARIES_2[1],
-						MQ135_TEMP_DEP_BOUNDARIES[0],
-						MQ135_TEMP_DEP_BOUNDARIES[1],
-						true_temp) * res_ratio / 1000;
+			// case 3: falls above maximum boundary (must extrapolate)
+			// check if it falls under 1st humidity curve
+			if (hum <= (MQ135_RH_DEP_CURVE_1 + MQ135_RH_DEP_CURVE_2) / 2) {
+				return get_linear_function_value(MQ135_RESRATIO_DEP_BOUNDARIES_1[max_idx - 1],
+					MQ135_RESRATIO_DEP_BOUNDARIES_1[max_idx],
+					MQ135_TEMP_DEP_BOUNDARIES[max_idx - 1],
+					MQ135_TEMP_DEP_BOUNDARIES[max_idx],
+					true_temp) * res_ratio / 1000;
+			}
+			// falls under 2nd humidity curve
+			else
+			{
+				return get_linear_function_value(MQ135_RESRATIO_DEP_BOUNDARIES_2[max_idx - 1],
+					MQ135_RESRATIO_DEP_BOUNDARIES_2[max_idx],
+					MQ135_TEMP_DEP_BOUNDARIES[max_idx - 1],
+					MQ135_TEMP_DEP_BOUNDARIES[max_idx],
+					true_temp) * res_ratio / 1000;
 			}
 			break;
 		default:
