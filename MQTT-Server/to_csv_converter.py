@@ -1,11 +1,12 @@
 from data_access import DataAccess
 from sensor_aggregator import SensorAggregator
 import csv
+import datetime
 
 
 class CsvConverter:
     def __init__(self, db_access: DataAccess, columns_sensor: list, columns_external: list,
-                 invalid_values: list, csv_filename: str, collector_count: int = 1):
+                 invalid_values: list, csv_filename: str, after_date: datetime = None, before_date: datetime = None):
         self.db_access = db_access
         if not self.db_access.is_connection_active:
             raise ValueError("no connection to database.")
@@ -16,27 +17,38 @@ class CsvConverter:
         if self.columns_sensor.count == 0:
             raise ValueError("columns_sensor is empty.")
         self.tolerance = 10
-        self.collector_count = collector_count
+        self.before_date = before_date
+        self.after_date = after_date
 
     def convert(self):
         if self.columns_sensor.count == 0:
             raise ValueError("columns_sensor is empty.")
 
-        filter_column = {'collectors_data': {'$elemMatch': {'$or': [{key: {}} for key in self.columns_sensor]}}}
+        filter_column = {'$or': []}
+        filter_column['$or']\
+            .append({'collectors_data': {'$elemMatch': {'$or': [{key: {}} for key in self.columns_sensor]}}})
 
-        # make sure field exists in document and it does not have invalid values
-        for or_clause in filter_column['collectors_data']['$elemMatch']['$or']:
+        # make sure at least one valid field exists in document
+        #   sensor data
+        for or_clause in filter_column['$or'][0]['collectors_data']['$elemMatch']['$or']:
             for key in or_clause.keys():
-                if len(self.invalid_values) > 0:
-                    or_clause[key] = {'$exists': True, '$nin': self.invalid_values}
-                else:
-                    or_clause[key] = {'$exists': True}
+                or_clause[key] = {'$exists': True}
 
+        #   external data
         for column in self.columns_external:
-            if len(self.invalid_values) > 0:
-                filter_column[column] = {'$exists': True, '$nin': self.invalid_values}
-            else:
-                filter_column[column] = {'$exists': True}
+            filter_column['$or'].append({column: {'$exists': True}})
+            if column == 'date':
+                # check if dates are provided and specify query restriction, otherwise ignore
+                #       get all data later than the after_date specified
+                if self.after_date is not None and self.before_date is None:
+                    filter_column['date'] = {'$gte': self.after_date}
+                #       get data between the two dates specified
+                elif self.after_date is not None and self.before_date is not None:
+                    filter_column['date'] = {'$gte': self.after_date, '$lte': self.before_date}
+                #       get all data prior to the before_date specified
+                elif self.after_date is None and self.before_date is not None:
+                    filter_column['date'] = {'$lte': self.before_date}
+
         print('filter set: ' + str(filter_column))
 
         documents = self.db_access.get_documents(filter_column)
@@ -48,7 +60,7 @@ class CsvConverter:
                 if key == 'collectors_data':
                     for collector in document['collectors_data']:
                         for inner_key, inner_value in list(collector.items()):
-                            if inner_key not in self.columns_sensor and inner_key not in self.columns_external \
+                            if inner_key not in self.columns_sensor \
                                     or inner_value in self.invalid_values:
                                 del collector[inner_key]
 
