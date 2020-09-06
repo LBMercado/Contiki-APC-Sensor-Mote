@@ -66,8 +66,9 @@ You can make use of the mqtt subscriber to make the published data persistent. T
 ## Software Requirements
 * Mosquitto - for MQTT functionality
 * MongoDB (64-bit) - for storing sensor data persistently
-* Paho MQTT - module dependency
-* PyMongo - module dependency
+* Paho MQTT - python module dependency for MQTT functionality
+* Flask - python module dependecy for API functionality
+* PyMongo - python module dependency for MongoDB access
 * Python - to run the mqtt subscriber script
 
 Make sure to update the git repo for contiki to avoid any other issues
