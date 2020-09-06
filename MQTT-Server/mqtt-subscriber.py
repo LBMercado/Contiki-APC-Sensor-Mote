@@ -1,28 +1,28 @@
 import paho.mqtt.client as mqtt
+from configparser import ConfigParser
 from data_access import DataAccess
 from sensor_msg_parser import SensorMessageParser
-from sensor_aggregator import SensorAggregator
 from datetime import datetime
 import weather_access
 import json
 
-""" MQTT Parameters """
+""" MQTT Default Parameters """
 SUBSCRIBER_ID = "apc-iot:subx1"
-SERVER_ADDR = "fd00::1"
+SERVER_ADDRESS = "fd00::1"
 MQTT_PORT = 1883
 KEEP_ALIVE_TIME = 60
 TOP_LEVEL_TOPIC = "apc-iot"
 SUBTOPICS = ["113", "056"]
 QOS_LEVEL = 0
 client = mqtt.Client(SUBSCRIBER_ID, protocol=mqtt.MQTTv31)
-""" Database Parameters """
+""" Database Default Parameters """
 DB_NAME = "apc-iot"
-DB_ADDR = "localhost"
+DB_ADDRESS = "localhost"
 DB_PORT = 27017
 DB_COLLECTION = "apc_data"
-dataLogic = DataAccess(DB_ADDR, DB_PORT, DB_COLLECTION)
-""" Weather API Parameters """
-api_key = weather_access.get_api_key()
+dataLogic = DataAccess(DB_ADDRESS, int(DB_PORT), DB_NAME, DB_COLLECTION)
+""" Weather API Default Parameters """
+API_KEY = -1
 LOCATION_ID = "1729525"
 """ State Machine Variables """
 state = 0
@@ -74,7 +74,7 @@ def on_message(client, userdata, message):
                 return
 
             # add weather field
-            weather = weather_access.get_weather_with_id(api_key, LOCATION_ID)
+            weather = weather_access.get_weather_with_id(API_KEY, LOCATION_ID)
             if weather is not None:
                 weather_params = {}
 
@@ -110,12 +110,39 @@ def on_log(client, userdata, level, buf):
 
 
 def main():
+    """ MQTT Parameters """
+    global SUBSCRIBER_ID, SERVER_ADDRESS, MQTT_PORT, KEEP_ALIVE_TIME, TOP_LEVEL_TOPIC, SUBTOPICS, QOS_LEVEL
+    global DB_NAME, DB_ADDRESS, DB_PORT, DB_COLLECTION
+    global API_KEY, LOCATION_ID
+    global client, dataLogic
+
+    config = ConfigParser()
+    config.read('config.ini')
+    # mqtt configuration
+    SUBSCRIBER_ID = config['mqtt']['subscriber_id']
+    SERVER_ADDRESS = config['mqtt']['server_address']
+    MQTT_PORT = int(config['mqtt']['mqtt_port'])
+    KEEP_ALIVE_TIME = int(config['mqtt']['keep_alive_time'])
+    TOP_LEVEL_TOPIC = config['mqtt']['top_level_topic']
+    SUBTOPICS = config['mqtt']['subtopics'].split(',')
+    SUBTOPICS = [x.strip(' ') for x in SUBTOPICS]  # trim whitespace
+    QOS_LEVEL = int(config['mqtt']['qos_level'])
+    # mongodb configuration
+    DB_NAME = config['mongodb']['db_name']
+    DB_ADDRESS = config['mongodb']['db_address']
+    DB_PORT = int(config['mongodb']['db_port'])
+    DB_COLLECTION = config['mongodb']['db_collection']
+    # weather api configuration
+    API_KEY = config['openweathermap']['api_key']
+    LOCATION_ID = config['openweathermap']['location_id']
+
+    client = mqtt.Client(SUBSCRIBER_ID, protocol=mqtt.MQTTv31)
     client.on_log = on_log
     client.on_connect = on_connect
     client.on_message = on_message
 
-    client.connect(SERVER_ADDR, MQTT_PORT, KEEP_ALIVE_TIME)
-    dataLogic.connect_db(DB_NAME)
+    client.connect(SERVER_ADDRESS, MQTT_PORT, KEEP_ALIVE_TIME)
+    dataLogic = DataAccess(DB_ADDRESS, int(DB_PORT), DB_NAME, DB_COLLECTION)
 
     # Blocking call that processes network traffic, dispatches callbacks and
     # handles reconnecting.

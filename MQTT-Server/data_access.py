@@ -1,18 +1,24 @@
-from pymongo import MongoClient
+from pymongo import MongoClient, DESCENDING as pymongo_DESCENDING
 from typing import List
 
 
 class DataAccess:
-    def __init__(self, address, port: int, collection_name: str):
+    def __init__(self, address, port: int, db_name: str = '', collection_name: str = ''):
         try:
             if not address or not port or port < 1:
                 raise ValueError("Invalid address or port specified.")
             self.address = address
             self.port = port
             self.collection_name = collection_name
-            self.is_connection_active = False
-            self.cur_db = None
-            self.client = MongoClient(address, port)
+            self.db_name = db_name
+            if self.db_name:
+                self.client = MongoClient(address, port)
+                self.cur_db = self.client[self.db_name]
+                self.is_connection_active = True
+            else:
+                self.is_connection_active = False
+                self.cur_db = None
+                self.client = MongoClient(address, port)
         except ValueError as err:
             print(err)
 
@@ -20,10 +26,12 @@ class DataAccess:
         if not db_name:
             print("Invalid database name specified.")
             return
+        self.db_name = db_name
         self.cur_db = self.client[db_name]
         self.is_connection_active = True
 
     def disconnect_db(self):
+        self.db_name = ''
         self.cur_db = None
         self.is_connection_active = False
 
@@ -43,3 +51,7 @@ class DataAccess:
         for document in self.cur_db[self.collection_name].find(criteria):
             documents.append(document)
         return documents
+
+    def get_first_document(self, criteria: dict):
+        # will get latest document first
+        return self.cur_db[self.collection_name].find(criteria, sort=[("date", pymongo_DESCENDING)]).limit(1)[0]

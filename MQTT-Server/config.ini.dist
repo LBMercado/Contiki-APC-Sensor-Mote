@@ -1,2 +1,28 @@
 [openweathermap]
-api_key=~
+api_key = 0
+location_id = 1729525
+
+[mqtt]
+subscriber_id = apc-iot:subx
+server_address = localhost
+mqtt_port = 1883
+keep_alive_time = 60
+top_level_topic = apc-iot
+subtopics = 113, 056
+qos_level = 0
+
+[mongodb]
+db_name = apc-iot
+db_address = localhost
+db_port = 27017
+db_collection = apc_data
+
+[csv_api]
+columns_sensor = Temperature (°C), Humidity (%%RH), PM25 (ug/m3),
+                      CO (PPM), NO2 (PPM), O3 (PPB),
+                      Wind Speed (m/s), Wind Direction
+columns_external = api_weather, api_wind, date
+columns_mote_info = myName, Uptime (sec), Def Route, RSSI (dBm), Preferred Address, On-Chip Temp (mC),
+                            VDD3 (mV), calibration
+
+invalid_values = , -1
