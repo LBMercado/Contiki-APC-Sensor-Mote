@@ -1,16 +1,18 @@
 from db_helper import db_get_all_sensor_data_normalized, db_get_mote_info, db_get_latest_sensor_data_normalized, \
     db_limit_get_sensor_data_normalized
 from data_access import DataAccess
+from to_csv_converter import CsvConverter
 from configparser import ConfigParser
+from werkzeug.wrappers import Response
 import datetime
+import os
 from flask import Flask
-from flask import request, jsonify
+from flask import jsonify, send_file
 
 app = Flask(__name__)
 app.config['DEBUG'] = True
 
 api = None
-
 
 @app.route('/', methods=['GET'])
 def home():
@@ -20,6 +22,11 @@ def home():
 @app.route('/sensor-data/<int:limit>', methods=['GET'])
 def get_limit_sensor_data(limit: int):
     return jsonify(api.get_limit_sensor_data(limit))
+
+
+@app.route('/sensor-data-csv')
+def get_sensor_data_csv():
+    return api.write_csv_file()
 
 
 @app.route('/sensor-data', methods=['GET'])
@@ -39,7 +46,7 @@ def get_mote_info():
 
 class ApcMonitorApi:
     def __init__(self, db_access: DataAccess, columns_sensor: list, columns_external: list,
-                 invalid_values: list, columns_mote_info: list):
+                 invalid_values: list, columns_mote_info: list,  csv_server_filename: str):
         self.db = db_access
         if not self.db.is_connection_active:
             raise ValueError("no connection to database.")
@@ -50,6 +57,20 @@ class ApcMonitorApi:
         self.invalid_values = invalid_values
         self.columns_mote_info = columns_mote_info
         self.tolerance = 10
+        self.csv_server_filename = csv_server_filename
+
+    def write_csv_file(self):
+        start_date = None
+        end_date = datetime.datetime.now()
+
+        converter = CsvConverter(self.db, self.columns_sensor, self.columns_external, self.invalid_values,
+                                 self.csv_server_filename, after_date=start_date, before_date=end_date)
+
+        # stream the response as the data is generated
+        response = Response(converter.stream_convert(), mimetype='text/csv')
+        # add a filename
+        response.headers.set("Content-Disposition", "attachment", filename="air-quality-data.csv")
+        return response
 
     def get_sensor_data(self):
         return db_get_all_sensor_data_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
@@ -88,9 +109,11 @@ def init():
     for i in range(len(invalid_values)):
         if _is_number(invalid_values[i]):
             invalid_values[i] = int(invalid_values[i])
+    csv_server_filename = config['csv_api']['server_file']
 
     db_access = DataAccess(db_address, db_port, db_name, db_collection)
-    api = ApcMonitorApi(db_access, columns_sensor, columns_external, invalid_values, columns_mote_info)
+    api = ApcMonitorApi(db_access, columns_sensor, columns_external, invalid_values, columns_mote_info,
+                        csv_server_filename)
 
 
 # helper function for invalid_values

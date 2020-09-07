@@ -181,3 +181,6 @@ config.ini
 
 #pycharm env
 /MQTT-Server/venv
+
+#csv files
+*.csv
