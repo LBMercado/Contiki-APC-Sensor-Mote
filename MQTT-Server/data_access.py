@@ -1,5 +1,4 @@
 from pymongo import MongoClient, DESCENDING as pymongo_DESCENDING
-from typing import List
 
 
 class DataAccess:
@@ -55,3 +54,11 @@ class DataAccess:
     def get_first_document(self, criteria: dict):
         # will get latest document first
         return self.cur_db[self.collection_name].find(criteria, sort=[("date", pymongo_DESCENDING)]).limit(1)[0]
+
+    def get_first_documents(self, criteria: dict, limit: int):
+        # will get latest document first
+        cursor = self.cur_db[self.collection_name].find(criteria, sort=[("date", pymongo_DESCENDING)]).limit(limit)
+        documents = []
+        for document in cursor:
+            documents.append(document)
+        return documents

@@ -1,7 +1,7 @@
 from data_access import DataAccess
 import csv
 import datetime
-from db_helper import db_get_normalized
+from db_helper import db_get_all_sensor_data_normalized
 
 
 class CsvConverter:
@@ -26,8 +26,8 @@ class CsvConverter:
         if self.columns_sensor.count == 0:
             raise ValueError("columns_sensor is empty.")
 
-        documents = db_get_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
-                                      self.before_date, self.after_date, self.tolerance, self.db_access)
+        documents = db_get_all_sensor_data_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
+                                                      self.before_date, self.after_date, self.tolerance, self.db_access)
 
         if len(documents) == 0:
             print('WARNING - no data to write other than headers.')

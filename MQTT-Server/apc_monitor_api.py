@@ -1,4 +1,5 @@
-from db_helper import db_get_normalized, db_get_mote_info
+from db_helper import db_get_all_sensor_data_normalized, db_get_mote_info, db_get_latest_sensor_data_normalized, \
+    db_limit_get_sensor_data_normalized
 from data_access import DataAccess
 from configparser import ConfigParser
 import datetime
@@ -16,9 +17,20 @@ def home():
     return "<h1>RESTful API for APC Monitoring</h1>"
 
 
+@app.route('/sensor-data/<int:limit>', methods=['GET'])
+def get_limit_sensor_data(limit: int):
+    return jsonify(api.get_limit_sensor_data(limit))
+
+
 @app.route('/sensor-data', methods=['GET'])
 def get_sensor_data():
     return jsonify(api.get_sensor_data())
+
+
+@app.route('/sensor-datum', methods=['GET'])
+def get_sensor_datum():
+    return jsonify(api.get_sensor_datum())
+
 
 @app.route('/mote-info', methods=['GET'])
 def get_mote_info():
@@ -40,8 +52,16 @@ class ApcMonitorApi:
         self.tolerance = 10
 
     def get_sensor_data(self):
-        return db_get_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
-                                 datetime.datetime.now(), None, 10, self.db)
+        return db_get_all_sensor_data_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
+                                                 datetime.datetime.now(), None, 10, self.db)
+
+    def get_sensor_datum(self):
+        return db_get_latest_sensor_data_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
+                                                    datetime.datetime.now(), None, 10, self.db)
+
+    def get_limit_sensor_data(self, limit: int):
+        return db_limit_get_sensor_data_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
+                                                   datetime.datetime.now(), None, 10, limit, self.db)
 
     def get_mote_info(self):
         return db_get_mote_info(self.columns_mote_info, self.db)
