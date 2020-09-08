@@ -1,9 +1,9 @@
 [openweathermap]
-api_key = 0
+api_key=0
 location_id = 1729525
 
 [mqtt]
-subscriber_id = apc-iot:subx
+subscriber_id = apc-iot:subx1
 server_address = localhost
 mqtt_port = 1883
 keep_alive_time = 60
@@ -24,5 +24,8 @@ columns_sensor = Temperature (°C), Humidity (%%RH), PM25 (ug/m3),
 columns_external = api_weather, api_wind, date
 columns_mote_info = myName, Uptime (sec), Def Route, RSSI (dBm), Preferred Address, On-Chip Temp (mC),
                             VDD3 (mV), calibration
+
+# relative to project location
+server_file = csv_data/air-quality-data.csv
 
 invalid_values = , -1
