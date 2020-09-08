@@ -5,12 +5,13 @@ from to_csv_converter import CsvConverter
 from configparser import ConfigParser
 from werkzeug.wrappers import Response
 import datetime
-import os
 from flask import Flask
-from flask import jsonify, send_file
+from flask import jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
 app.config['DEBUG'] = True
+CORS(app)
 
 api = None
 
