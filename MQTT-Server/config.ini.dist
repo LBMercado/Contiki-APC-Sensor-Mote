@@ -25,7 +25,12 @@ columns_external = api_weather, api_wind, date
 columns_mote_info = myName, Uptime (sec), Def Route, RSSI (dBm), Preferred Address, On-Chip Temp (mC),
                             VDD3 (mV), calibration
 
+[apc_model]
+use_api_wind = 1
+
 # relative to project location
 server_file = csv_data/air-quality-data.csv
+
+predictor_model_name = ensemble
 
 invalid_values = , -1

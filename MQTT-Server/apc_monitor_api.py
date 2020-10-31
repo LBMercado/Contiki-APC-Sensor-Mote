@@ -1,6 +1,7 @@
 from db_helper import db_get_all_sensor_data_normalized, db_get_mote_info, db_get_latest_sensor_data_normalized, \
     db_limit_get_sensor_data_normalized
 from data_access import DataAccess
+from apc_model import ApcModel
 from to_csv_converter import CsvConverter
 from configparser import ConfigParser
 from werkzeug.wrappers import Response
@@ -8,12 +9,14 @@ import datetime
 from flask import Flask
 from flask import jsonify
 from flask_cors import CORS
+from flask_api import status
 
 app = Flask(__name__)
 app.config['DEBUG'] = True
 CORS(app)
 
 api = None
+
 
 @app.route('/', methods=['GET'])
 def home():
@@ -45,9 +48,15 @@ def get_mote_info():
     return jsonify(api.get_mote_info())
 
 
+@app.route('/predict/<int:time_step>', methods=['GET'])
+def get_prediction(time_step: int):
+    return jsonify(api.get_prediction(time_step))
+
+
 class ApcMonitorApi:
     def __init__(self, db_access: DataAccess, columns_sensor: list, columns_external: list,
-                 invalid_values: list, columns_mote_info: list,  csv_server_filename: str):
+                 invalid_values: list, columns_mote_info: list, csv_server_filename: str,
+                 predictor_model_name: str):
         self.db = db_access
         if not self.db.is_connection_active:
             raise ValueError("no connection to database.")
@@ -59,6 +68,7 @@ class ApcMonitorApi:
         self.columns_mote_info = columns_mote_info
         self.tolerance = 10
         self.csv_server_filename = csv_server_filename
+        self.model = ApcModel(predictor_model_name)
 
     def write_csv_file(self):
         start_date = None
@@ -88,6 +98,10 @@ class ApcMonitorApi:
     def get_mote_info(self):
         return db_get_mote_info(self.columns_mote_info, self.db)
 
+    def get_prediction(self, time_step: int):
+        apc_data = db_get_latest_sensor_data_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
+                                                        datetime.datetime.now(), None, 10, self.db)
+        return self.model.predict(apc_data, time_step)
 
 def init():
     global api
@@ -105,16 +119,17 @@ def init():
     columns_external = [x.strip() for x in columns_external]
     columns_mote_info = config['csv_api']['columns_mote_info'].split(',')
     columns_mote_info = [x.strip() for x in columns_mote_info]
-    invalid_values = config['csv_api']['invalid_values'].split(',')
+    invalid_values = config['apc_model']['invalid_values'].split(',')
     invalid_values = [x.strip() for x in invalid_values]
     for i in range(len(invalid_values)):
         if _is_number(invalid_values[i]):
             invalid_values[i] = int(invalid_values[i])
-    csv_server_filename = config['csv_api']['server_file']
+    csv_server_filename = config['apc_model']['server_file']
+    model_name = config['apc_model']['predictor_model_name']
 
     db_access = DataAccess(db_address, db_port, db_name, db_collection)
     api = ApcMonitorApi(db_access, columns_sensor, columns_external, invalid_values, columns_mote_info,
-                        csv_server_filename)
+                        csv_server_filename, model_name)
 
 
 # helper function for invalid_values
