@@ -9,15 +9,19 @@ class Predictor:
         if predictors:
             self._build_model()
 
-    def predict(self, inputs, time_step):
+    def predict(self, inputs, time_step) -> list:
+        predictions = list()
+
         if len(self.model_list) == 0:
-            return None
+            raise ValueError('No model initialized.')
         if self.model_type == 'direct':
             if time_step > len(self.model_list):
                 time_step = len(self.model_list)
             elif time_step <= 0:
                 time_step = 1
-            return self.model_list[time_step - 1].predict(inputs)
+            for cur_step in range(time_step):
+                predictions.append(self.model_list[cur_step].predict(inputs))
+            return predictions
         elif self.model_type == 'recurrent':
             if time_step > len(self.model_list):
                 time_step = len(self.model_list)
@@ -29,8 +33,9 @@ class Predictor:
                     preds = self.model_list[0].predict(inputs)
                 else:
                     preds = self.model_list[idx].predict(preds)
-            return preds
-        return None
+                predictions.append(preds)
+            return predictions
+        raise ValueError('Invalid model type specified = {}.'.format(self.model_type))
 
     def _build_model(self):
         self.model_list = []

@@ -31,10 +31,11 @@ class ApcModel:
         # pass the df to the model and return its result
         if self.predictor_model is None:
             raise ValueError('no model defined')
-        preds = self.predictor_model.predict(df, time_step)
-        formatted_preds = reformat_pred_data(preds)
-        formatted_preds['date'] = timedelta(hours=time_step) + cur_date
-        return formatted_preds
+        preds_list = self.predictor_model.predict(df, time_step)
+        for idx in range(len(preds_list)):
+            preds_list[idx] = reformat_pred_data(preds_list[idx])
+            preds_list[idx]['date'] = timedelta(hours=idx + 1) + cur_date
+        return preds_list
 
     def _reformat_apc_data(self, apc_data: Dict) -> pd.DataFrame:
         # reformat wind speed and direction of choice
