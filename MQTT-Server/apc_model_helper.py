@@ -41,6 +41,6 @@ def load_model(model_name: str):
 
 def reformat_pred_data(preds: ndarray):
     formatted_preds = {
-        'PM25 (ug/m3)': preds[0][2], 'CO (PPM)': preds[0][3], 'NO2 (PPM)': preds[0][4], 'O3 (PPB)': preds[0][5]
+        'PM25 (ug/m3)': preds[0][2], 'CO (PPM)': preds[0][3], 'NO2 (PPM)': preds[0][4] / 1000, 'O3 (PPB)': preds[0][5]
     }
     return formatted_preds
