@@ -56,7 +56,7 @@ def get_prediction(time_step: int):
 class ApcMonitorApi:
     def __init__(self, db_access: DataAccess, columns_sensor: list, columns_external: list,
                  invalid_values: list, columns_mote_info: list, csv_server_filename: str,
-                 predictor_model_name: str):
+                 predictor_model_name: str, use_api_wind: bool = False, lazy_load_model: bool = False):
         self.db = db_access
         if not self.db.is_connection_active:
             raise ValueError("no connection to database.")
@@ -68,7 +68,7 @@ class ApcMonitorApi:
         self.columns_mote_info = columns_mote_info
         self.tolerance = 10
         self.csv_server_filename = csv_server_filename
-        self.model = ApcModel(predictor_model_name)
+        self.model = ApcModel(predictor_model_name, use_api_wind, lazy_load_model)
 
     def write_csv_file(self):
         start_date = None
@@ -99,9 +99,11 @@ class ApcMonitorApi:
         return db_get_mote_info(self.columns_mote_info, self.db)
 
     def get_prediction(self, time_step: int):
-        apc_data = db_get_latest_sensor_data_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
-                                                        datetime.datetime.now(), None, 10, self.db)
+        apc_data = db_limit_get_sensor_data_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
+                                                       datetime.datetime.now(), None, 10, 13, self.db)
+        apc_data.reverse()
         return self.model.predict(apc_data, time_step)
+
 
 def init():
     global api
@@ -126,10 +128,12 @@ def init():
             invalid_values[i] = int(invalid_values[i])
     csv_server_filename = config['apc_model']['server_file']
     model_name = config['apc_model']['predictor_model_name']
+    use_api_wind = config['apc_model']['use_api_wind'].strip() == '1'
+    lazy_load_model = config['apc_model']['lazy_load'].strip() == '1'
 
     db_access = DataAccess(db_address, db_port, db_name, db_collection)
     api = ApcMonitorApi(db_access, columns_sensor, columns_external, invalid_values, columns_mote_info,
-                        csv_server_filename, model_name)
+                        csv_server_filename, model_name, use_api_wind, lazy_load_model)
 
 
 # helper function for invalid_values

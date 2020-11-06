@@ -39,6 +39,22 @@ def load_model(model_name: str):
     return loaded_model
 
 
+def lazy_load_model(model_name: str, nth_model: int):
+    if nth_model <= 0 or nth_model > 12:
+        raise ValueError('nth model exceeds allowed range [1 - 12]')
+    loaded_model = None
+    root_folder = 'ml_models'
+    dir_name = os.path.join(root_folder, model_name)
+    file_name = '{}_t{}_model.sav'.format(model_name, nth_model)
+    file_path = os.path.join(dir_name, file_name)
+    if os.path.exists(file_path):
+        loaded_model = joblib.load(file_path)
+        print('Loaded model from file {}'.format(file_name))
+    else:
+        print('warning! no model loaded for {}-th model'.format(nth_model))
+    return loaded_model
+
+
 def reformat_pred_data(preds: ndarray):
     formatted_preds = {
         'PM25 (ug/m3)': preds[0][2], 'CO (PPM)': preds[0][3], 'NO2 (PPM)': preds[0][4] / 1000, 'O3 (PPB)': preds[0][5]

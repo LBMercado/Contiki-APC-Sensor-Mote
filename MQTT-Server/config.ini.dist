@@ -27,10 +27,11 @@ columns_mote_info = myName, Uptime (sec), Def Route, RSSI (dBm), Preferred Addre
 
 [apc_model]
 use_api_wind = 1
+lazy_load = 1
 
 # relative to project location
 server_file = csv_data/air-quality-data.csv
 
-predictor_model_name = ensemble
+predictor_model_name = ensemble_stacking
 
 invalid_values = , -1

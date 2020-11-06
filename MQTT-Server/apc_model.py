@@ -1,43 +1,78 @@
-from configparser import ConfigParser
 from apc_label_encoder import ApcLabelEncoder
-from apc_model_helper import parse_wind_direction_degrees, load_model, reformat_pred_data
-from predictor import Predictor
-from typing import Dict
+from apc_model_helper import parse_wind_direction_degrees, load_model, lazy_load_model, reformat_pred_data
+from predictor import SlidingPredictor, LazySlidingPredictor
+from typing import Dict, List
 from datetime import timedelta
-import pandas as pd
+import numpy as np
 
 
 class ApcModel:
-    def __init__(self, model_name: str = None):
+    def __init__(self, model_name: str = None, use_api_wind: bool = False, lazy_load: bool = False):
         self.predictor_model = None
+        self.use_api_wind = use_api_wind
+        self.lazy_load = lazy_load
+        self.model_name = model_name
         if model_name:
             self.build_model(model_name)
-        config = ConfigParser()
-        config.read('config.ini')
-        try:
-            self.use_api_wind = int(config['apc_model']['use_api_wind']) != 0
-        except ValueError:
-            # use default setting
-            self.use_api_wind = True
         self.label_encoder = ApcLabelEncoder()
 
     def build_model(self, model_name: str):
-        model_list = load_model(model_name)
-        self.predictor_model = Predictor('recurrent', model_list)
+        if not self.lazy_load:
+            model_list = load_model(model_name)
+            self.predictor_model = SlidingPredictor('recurrent', model_list)
+        else:
+            self.predictor_model = LazySlidingPredictor('recurrent')
 
-    def predict(self, current_apc_data: Dict, time_step: int):
-        cur_date = current_apc_data['date']
-        df = self._reformat_apc_data(current_apc_data)
-        # pass the df to the model and return its result
+    '''
+        apc data must be ascending time order! 
+    '''
+    def predict(self, apc_data_window: List[Dict], time_step: int):
         if self.predictor_model is None:
             raise ValueError('no model defined')
-        preds_list = self.predictor_model.predict(df, time_step)
+        if not self.lazy_load:
+            return self._normal_predict(apc_data_window, time_step)
+        else:
+            return self._lazy_predict(apc_data_window, time_step)
+
+    def _normal_predict(self, apc_data_window: List[Dict], time_step: int):
+        sliding_window = np.empty
+        present_date = apc_data_window[len(apc_data_window) - 1]['date']
+        for idx, apc_data in enumerate(apc_data_window):
+            window = self._reformat_apc_data(apc_data)
+            if idx == len(apc_data_window) - 1:
+                present_date = apc_data['date']
+            if idx == 0:
+                sliding_window = window
+            else:
+                sliding_window = np.hstack((sliding_window, window))
+
+        preds_list = self.predictor_model.predict(sliding_window, time_step)
         for idx in range(len(preds_list)):
             preds_list[idx] = reformat_pred_data(preds_list[idx])
-            preds_list[idx]['date'] = timedelta(hours=idx + 1) + cur_date
+            preds_list[idx]['date'] = timedelta(hours=idx + 1) + present_date
         return preds_list
 
-    def _reformat_apc_data(self, apc_data: Dict) -> pd.DataFrame:
+    def _lazy_predict(self, apc_data_window: List[Dict], time_step: int):
+        sliding_window = np.empty
+        present_date = apc_data_window[len(apc_data_window) - 1]['date']
+        for idx, apc_data in enumerate(apc_data_window):
+            window = self._reformat_apc_data(apc_data)
+            if idx == 0:
+                sliding_window = window
+            else:
+                sliding_window = np.hstack((sliding_window, window))
+
+        preds_list = list()
+        for cur_time_step in range(1, time_step + 1):
+            model = lazy_load_model(self.model_name, cur_time_step)
+            sliding_window, preds = self.predictor_model.lazy_predict(sliding_window, model)
+            formatted_preds = reformat_pred_data(preds)
+            formatted_preds['date'] = timedelta(hours=cur_time_step) + present_date
+            preds_list.append(formatted_preds)
+
+        return preds_list
+
+    def _reformat_apc_data(self, apc_data: Dict) -> np.ndarray:
         # reformat wind speed and direction of choice
         if 'api_wind' in apc_data:
             if self.use_api_wind and apc_data['api_wind']:
@@ -61,4 +96,4 @@ class ApcModel:
             # TODO: should raise an error
             apc_data['api_weather'] = self.label_encoder.encode_weather_condition('Clouds')[0]
 
-        return pd.DataFrame([apc_data])
+        return np.array(list(apc_data.values()))
