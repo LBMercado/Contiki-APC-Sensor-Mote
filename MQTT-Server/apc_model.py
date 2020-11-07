@@ -5,7 +5,6 @@ from typing import Dict, List
 from datetime import timedelta
 import numpy as np
 
-
 class ApcModel:
     def __init__(self, model_name: str = None, use_api_wind: bool = False, lazy_load: bool = False):
         self.predictor_model = None
@@ -69,6 +68,8 @@ class ApcModel:
             formatted_preds = reformat_pred_data(preds)
             formatted_preds['date'] = timedelta(hours=cur_time_step) + present_date
             preds_list.append(formatted_preds)
+
+            del model
 
         return preds_list
 

@@ -6,16 +6,13 @@ from to_csv_converter import CsvConverter
 from configparser import ConfigParser
 from werkzeug.wrappers import Response
 import datetime
-from flask import Flask
-from flask import jsonify
+from flask import Flask, jsonify
 from flask_cors import CORS
-from flask_api import status
 
+api = None
 app = Flask(__name__)
 app.config['DEBUG'] = True
 CORS(app)
-
-api = None
 
 
 @app.route('/', methods=['GET'])
@@ -111,10 +108,13 @@ def init():
     config = ConfigParser()
     config.read('config.ini')
 
+    # db config
     db_name = config['mongodb']['db_name']
     db_address = config['mongodb']['db_address']
     db_port = int(config['mongodb']['db_port'])
     db_collection = config['mongodb']['db_collection']
+
+    # csv file creation config
     columns_sensor = config['csv_api']['columns_sensor'].split(',')
     columns_sensor = [x.strip() for x in columns_sensor]
     columns_external = config['csv_api']['columns_external'].split(',')
@@ -127,6 +127,8 @@ def init():
         if _is_number(invalid_values[i]):
             invalid_values[i] = int(invalid_values[i])
     csv_server_filename = config['apc_model']['server_file']
+
+    # apc model config
     model_name = config['apc_model']['predictor_model_name']
     use_api_wind = config['apc_model']['use_api_wind'].strip() == '1'
     lazy_load_model = config['apc_model']['lazy_load'].strip() == '1'
@@ -134,6 +136,8 @@ def init():
     db_access = DataAccess(db_address, db_port, db_name, db_collection)
     api = ApcMonitorApi(db_access, columns_sensor, columns_external, invalid_values, columns_mote_info,
                         csv_server_filename, model_name, use_api_wind, lazy_load_model)
+
+    print('initialization complete!')
 
 
 # helper function for invalid_values
