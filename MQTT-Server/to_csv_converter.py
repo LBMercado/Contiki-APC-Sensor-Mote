@@ -3,13 +3,11 @@ import csv
 import datetime
 from io import StringIO
 from flask import stream_with_context
-
-from data_access import DataAccess
-from db_helper import db_get_all_sensor_data_normalized
+from data_access import ApcDataAccess
 
 
 class CsvConverter:
-    def __init__(self, db_access: DataAccess, columns_sensor: list, columns_external: list,
+    def __init__(self, db_access: ApcDataAccess, columns_sensor: list, columns_external: list,
                  invalid_values: list, csv_path: str, after_date: datetime = None, before_date: datetime = None):
         self.db_access = db_access
         if not self.db_access.is_connection_active:
@@ -28,8 +26,9 @@ class CsvConverter:
         if self.columns_sensor.count == 0:
             raise ValueError("columns_sensor is empty.")
 
-        documents = db_get_all_sensor_data_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
-                                                      self.before_date, self.after_date, self.tolerance, self.db_access)
+        documents = self.db_access.get_all_sensor_data_normalized(self.columns_sensor, self.columns_external,
+                                                                  self.invalid_values, self.before_date,
+                                                                  self.after_date, self.tolerance)
 
         if len(documents) == 0:
             print('WARNING - no data to write other than headers.')
@@ -52,8 +51,9 @@ class CsvConverter:
         if self.columns_sensor.count == 0:
             raise ValueError("columns_sensor is empty.")
 
-        documents = db_get_all_sensor_data_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
-                                                      self.before_date, self.after_date, self.tolerance, self.db_access)
+        documents = self.db_access.get_all_sensor_data_normalized(self.columns_sensor, self.columns_external,
+                                                                  self.invalid_values,self.before_date,
+                                                                  self.after_date, self.tolerance)
 
         if len(documents) == 0:
             print('WARNING - no data to write other than headers.')

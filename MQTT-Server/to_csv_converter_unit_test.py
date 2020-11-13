@@ -10,8 +10,8 @@ class ToCsvConverterTestCase(unittest.TestCase):
         db_port = 27017
         db_name = 'apc-iot'
         db_coll_name = 'apc_data'
-        self.db_access = DataAccess(db_address, db_port, db_coll_name)
-        self.db_access.connect_db(db_name)
+        self.coll_name = db_coll_name
+        self.db_access = DataAccess(db_address, db_port, db_name)
         self.assertTrue(self.db_access.is_connection_active)
         self.csv_filename = 'test.csv'
 

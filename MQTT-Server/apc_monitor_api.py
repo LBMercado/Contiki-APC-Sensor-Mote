@@ -1,11 +1,9 @@
-from db_helper import db_get_all_sensor_data_normalized, db_get_mote_info, db_get_latest_sensor_data_normalized, \
-    db_limit_get_sensor_data_normalized
-from data_access import DataAccess
+from datetime import datetime
+from data_access import ApcDataAccess
 from apc_model import ApcModel
 from to_csv_converter import CsvConverter
 from configparser import ConfigParser
 from werkzeug.wrappers import Response
-import datetime
 from flask import Flask, jsonify
 from flask_cors import CORS
 
@@ -51,7 +49,7 @@ def get_prediction(time_step: int):
 
 
 class ApcMonitorApi:
-    def __init__(self, db_access: DataAccess, columns_sensor: list, columns_external: list,
+    def __init__(self, db_access: ApcDataAccess, columns_sensor: list, columns_external: list,
                  invalid_values: list, columns_mote_info: list, csv_server_filename: str,
                  predictor_model_name: str, use_api_wind: bool = False, lazy_load_model: bool = False):
         self.db = db_access
@@ -66,10 +64,11 @@ class ApcMonitorApi:
         self.tolerance = 10
         self.csv_server_filename = csv_server_filename
         self.model = ApcModel(predictor_model_name, use_api_wind, lazy_load_model)
+        self.prediction_in_progress = False
 
     def write_csv_file(self):
         start_date = None
-        end_date = datetime.datetime.now()
+        end_date = datetime.now()
 
         converter = CsvConverter(self.db, self.columns_sensor, self.columns_external, self.invalid_values,
                                  self.csv_server_filename, after_date=start_date, before_date=end_date)
@@ -81,25 +80,42 @@ class ApcMonitorApi:
         return response
 
     def get_sensor_data(self):
-        return db_get_all_sensor_data_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
-                                                 datetime.datetime.now(), None, 10, self.db)
+        return self.db.get_all_sensor_data_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
+                                                      datetime.now(), None, 10)
 
     def get_sensor_datum(self):
-        return db_get_latest_sensor_data_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
-                                                    datetime.datetime.now(), None, 10, self.db)
+        return self.db.get_latest_sensor_data_normalized(self.columns_sensor, self.columns_external,
+                                                         self.invalid_values,
+                                                         datetime.now(), None, 10)
 
     def get_limit_sensor_data(self, limit: int):
-        return db_limit_get_sensor_data_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
-                                                   datetime.datetime.now(), None, 10, limit, self.db)
+        return self.db.get_limit_sensor_data_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
+                                                        datetime.now(), None, 10, limit)
 
     def get_mote_info(self):
-        return db_get_mote_info(self.columns_mote_info, self.db)
+        return self.db.get_mote_info(self.columns_mote_info)
 
     def get_prediction(self, time_step: int):
-        apc_data = db_limit_get_sensor_data_normalized(self.columns_sensor, self.columns_external, self.invalid_values,
-                                                       datetime.datetime.now(), None, 10, 13, self.db)
-        apc_data.reverse()
-        return self.model.predict(apc_data, time_step)
+        earliest_apc_data = self.db.get_latest_sensor_data_normalized(self.columns_sensor, self.columns_external,
+                                                                      self.invalid_values, datetime.now(), None, 10)
+        earliest_date = earliest_apc_data['date']
+        pred_data = self.db.get_limit_predictions(time_step, earliest_date)
+
+        if len(pred_data) < time_step and not self.prediction_in_progress:
+            self.prediction_in_progress = True
+            apc_data = self.db.get_limit_sensor_data_normalized(self.columns_sensor, self.columns_external,
+                                                                self.invalid_values, datetime.now(), None, 10, 13)
+            apc_data.reverse()
+            pred_data = self.model.predict(apc_data, time_step)
+
+            delete_count = self.db.delete_documents({'date': {'$gte': earliest_date}}, self.db.pred_data_coll_name)
+            print('deleted {} old forecasts'.format(delete_count))
+            for preds in pred_data:
+                self.db.insert_document(preds, self.db.pred_data_coll_name)
+                del preds['_id']
+
+            self.prediction_in_progress = False
+        return pred_data
 
 
 def init():
@@ -112,7 +128,8 @@ def init():
     db_name = config['mongodb']['db_name']
     db_address = config['mongodb']['db_address']
     db_port = int(config['mongodb']['db_port'])
-    db_collection = config['mongodb']['db_collection']
+    db_mote_data_collection = config['mongodb']['db_motedata_collection']
+    db_pred_data_collection = config['mongodb']['db_prediction_collection']
 
     # csv file creation config
     columns_sensor = config['csv_api']['columns_sensor'].split(',')
@@ -133,7 +150,7 @@ def init():
     use_api_wind = config['apc_model']['use_api_wind'].strip() == '1'
     lazy_load_model = config['apc_model']['lazy_load'].strip() == '1'
 
-    db_access = DataAccess(db_address, db_port, db_name, db_collection)
+    db_access = ApcDataAccess(db_address, db_port, db_name, db_mote_data_collection, db_pred_data_collection)
     api = ApcMonitorApi(db_access, columns_sensor, columns_external, invalid_values, columns_mote_info,
                         csv_server_filename, model_name, use_api_wind, lazy_load_model)
 
