@@ -6,28 +6,54 @@ from datetime import datetime
 import weather_access
 import json
 
-""" MQTT Default Parameters """
-SUBSCRIBER_ID = "apc-iot:subx1"
-SERVER_ADDRESS = "fd00::1"
-MQTT_PORT = 1883
-KEEP_ALIVE_TIME = 60
-TOP_LEVEL_TOPIC = "apc-iot"
-SUBTOPICS = ["113", "056"]
-QOS_LEVEL = 0
-client = mqtt.Client(SUBSCRIBER_ID, protocol=mqtt.MQTTv31)
-""" Database Default Parameters """
-DB_NAME = "apc-iot"
-DB_ADDRESS = "localhost"
-DB_PORT = 27017
-DB_COLLECTION = "apc_data"
-dataLogic = DataAccess(DB_ADDRESS, int(DB_PORT), DB_NAME, DB_COLLECTION)
-""" Weather API Default Parameters """
-API_KEY = -1
-LOCATION_ID = "1729525"
-""" State Machine Variables """
-state = 0
-MAX_STATES = len(SUBTOPICS)
-messages = []
+
+def main():
+    """ MQTT Parameters """
+    global SUBSCRIBER_ID, SERVER_ADDRESS, MQTT_PORT, KEEP_ALIVE_TIME, TOP_LEVEL_TOPIC, SUBTOPICS, QOS_LEVEL
+    global DB_NAME, DB_ADDRESS, DB_PORT, DB_MOTEDATA_COLL, DB_PREDICTIONS_COLL
+    global API_KEY, LOCATION_ID
+    global client, dataLogic
+    global state, MAX_STATES, messages
+
+    config = ConfigParser()
+    config.read('config.ini')
+    # mqtt configuration
+    SUBSCRIBER_ID = config['mqtt']['subscriber_id']
+    SERVER_ADDRESS = config['mqtt']['server_address']
+    MQTT_PORT = int(config['mqtt']['mqtt_port'])
+    KEEP_ALIVE_TIME = int(config['mqtt']['keep_alive_time'])
+    TOP_LEVEL_TOPIC = config['mqtt']['top_level_topic']
+    SUBTOPICS = config['mqtt']['subtopics'].split(',')
+    SUBTOPICS = [x.strip(' ') for x in SUBTOPICS]  # trim whitespace
+    QOS_LEVEL = int(config['mqtt']['qos_level'])
+    # mongodb configuration
+    DB_NAME = config['mongodb']['db_name']
+    DB_ADDRESS = config['mongodb']['db_address']
+    DB_PORT = int(config['mongodb']['db_port'])
+    DB_MOTEDATA_COLL = config['mongodb']['db_motedata_collection']
+    DB_PREDICTIONS_COLL = config['mongodb']['db_prediction_collection']
+
+    # weather api configuration
+    API_KEY = config['openweathermap']['api_key']
+    LOCATION_ID = config['openweathermap']['location_id']
+
+    client = mqtt.Client(SUBSCRIBER_ID, protocol=mqtt.MQTTv31)
+    client.on_log = on_log
+    client.on_connect = on_connect
+    client.on_message = on_message
+
+    client.connect(SERVER_ADDRESS, MQTT_PORT, KEEP_ALIVE_TIME)
+    dataLogic = DataAccess(DB_ADDRESS, int(DB_PORT), DB_NAME)
+
+    state = 0
+    MAX_STATES = len(SUBTOPICS)
+    messages = []
+
+    # Blocking call that processes network traffic, dispatches callbacks and
+    # handles reconnecting.
+    # Other loop*() functions are available that give a threaded interface and a
+    # manual interface.
+    client.loop_forever()
 
 
 # The callback for when the client receives a CONNACK response from the server.
@@ -96,7 +122,7 @@ def on_message(client, userdata, message):
             document['date'] = datetime.now()
 
             print("Message(Formatted): " + str(document))
-            dataLogic.insert_document(document)
+            dataLogic.insert_document(document, DB_MOTEDATA_COLL)
         else:
             print("Database is not active")
 
@@ -107,48 +133,6 @@ def on_message(client, userdata, message):
 # debug logger
 def on_log(client, userdata, level, buf):
     print(buf)
-
-
-def main():
-    """ MQTT Parameters """
-    global SUBSCRIBER_ID, SERVER_ADDRESS, MQTT_PORT, KEEP_ALIVE_TIME, TOP_LEVEL_TOPIC, SUBTOPICS, QOS_LEVEL
-    global DB_NAME, DB_ADDRESS, DB_PORT, DB_COLLECTION
-    global API_KEY, LOCATION_ID
-    global client, dataLogic
-
-    config = ConfigParser()
-    config.read('config.ini')
-    # mqtt configuration
-    SUBSCRIBER_ID = config['mqtt']['subscriber_id']
-    SERVER_ADDRESS = config['mqtt']['server_address']
-    MQTT_PORT = int(config['mqtt']['mqtt_port'])
-    KEEP_ALIVE_TIME = int(config['mqtt']['keep_alive_time'])
-    TOP_LEVEL_TOPIC = config['mqtt']['top_level_topic']
-    SUBTOPICS = config['mqtt']['subtopics'].split(',')
-    SUBTOPICS = [x.strip(' ') for x in SUBTOPICS]  # trim whitespace
-    QOS_LEVEL = int(config['mqtt']['qos_level'])
-    # mongodb configuration
-    DB_NAME = config['mongodb']['db_name']
-    DB_ADDRESS = config['mongodb']['db_address']
-    DB_PORT = int(config['mongodb']['db_port'])
-    DB_COLLECTION = config['mongodb']['db_collection']
-    # weather api configuration
-    API_KEY = config['openweathermap']['api_key']
-    LOCATION_ID = config['openweathermap']['location_id']
-
-    client = mqtt.Client(SUBSCRIBER_ID, protocol=mqtt.MQTTv31)
-    client.on_log = on_log
-    client.on_connect = on_connect
-    client.on_message = on_message
-
-    client.connect(SERVER_ADDRESS, MQTT_PORT, KEEP_ALIVE_TIME)
-    dataLogic = DataAccess(DB_ADDRESS, int(DB_PORT), DB_NAME, DB_COLLECTION)
-
-    # Blocking call that processes network traffic, dispatches callbacks and
-    # handles reconnecting.
-    # Other loop*() functions are available that give a threaded interface and a
-    # manual interface.
-    client.loop_forever()
 
 
 if __name__ == "__main__":

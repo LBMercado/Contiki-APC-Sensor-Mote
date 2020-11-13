@@ -15,7 +15,8 @@ qos_level = 0
 db_name = apc-iot
 db_address = localhost
 db_port = 27017
-db_collection = apc_data
+db_motedata_collection = apc_data
+db_prediction_collection = apc_predictions
 
 [csv_api]
 columns_sensor = Temperature (°C), Humidity (%%RH), PM25 (ug/m3),
