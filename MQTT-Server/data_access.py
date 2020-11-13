@@ -339,5 +339,7 @@ class ApcDataAccess(DataAccess):
         else:
             filters = {'date': {'$gte': base_date}}
         projection = {'_id': False}
-        return self.get_first_documents(filters, self.pred_data_coll_name, count, projection)
+        preds = self.get_first_documents(filters, self.pred_data_coll_name, count, projection)
+        preds.reverse()
+        return preds
 
