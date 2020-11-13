@@ -5,6 +5,7 @@ from typing import Dict, List
 from datetime import timedelta
 import numpy as np
 
+
 class ApcModel:
     def __init__(self, model_name: str = None, use_api_wind: bool = False, lazy_load: bool = False):
         self.predictor_model = None
@@ -25,6 +26,7 @@ class ApcModel:
     '''
         apc data must be ascending time order! 
     '''
+
     def predict(self, apc_data_window: List[Dict], time_step: int):
         if self.predictor_model is None:
             raise ValueError('no model defined')
@@ -96,5 +98,8 @@ class ApcModel:
         else:
             # TODO: should raise an error
             apc_data['api_weather'] = self.label_encoder.encode_weather_condition('Clouds')[0]
+
+        # reformat NO2 ppm to ppb
+        apc_data['NO2 (PPM)'] *= 1000
 
         return np.array(list(apc_data.values()))
