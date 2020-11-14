@@ -1495,6 +1495,8 @@ PROCESS_THREAD(mqtt_handler_process, ev, data)
 		if (ev == PROCESS_EVENT_RESET_TIMERS){
 			etimer_restart(&publish_periodic_timer);
 			PRINTF("%s: reset signal received, resetting MQTT publish timer\n", mqtt_handler_process.name);
+			leds_on(STATUS_LED);
+			ctimer_set(&ct_led, PUBLISH_LED_ON_DURATION * 5, publish_led_off, NULL); // turn on for five seconds
 		}
 	}
 	PROCESS_END();
