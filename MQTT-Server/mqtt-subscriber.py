@@ -13,7 +13,7 @@ def main():
     global DB_NAME, DB_ADDRESS, DB_PORT, DB_MOTEDATA_COLL, DB_PREDICTIONS_COLL
     global API_KEY, LOCATION_ID
     global client, dataLogic
-    global state, MAX_STATES, messages
+    global state, MAX_STATES, messages, topics_received
 
     config = ConfigParser()
     config.read('config.ini')
@@ -48,6 +48,7 @@ def main():
     state = 0
     MAX_STATES = len(SUBTOPICS)
     messages = []
+    topics_received = []
 
     # Blocking call that processes network traffic, dispatches callbacks and
     # handles reconnecting.
@@ -63,27 +64,37 @@ def on_connect(client, userdata, flags, rc):
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
     for subtopic in SUBTOPICS:
-        client.subscribe(TOP_LEVEL_TOPIC + "/" + subtopic + '/#', QOS_LEVEL)
+        client.subscribe("{}/{}/evt/status/fmt/json".format(TOP_LEVEL_TOPIC, subtopic), QOS_LEVEL)
+        # reset mote timers to synchronize mqtt publication
+        client.publish("{}/{}/cmd/timer-reset/fmt/json".format(TOP_LEVEL_TOPIC, subtopic), "1")
 
 
 # The callback for when a PUBLISH message is received from the server.
 def on_message(client, userdata, message):
     print("Received PUBLISH")
-    global state, messages
+    global state, messages, topics_received
     if state < MAX_STATES - 1:
         print("Current State: " + str(state))
         print("TOPIC: " + message.topic)
-        print("Message(Raw): " + str(message.payload))
-        messages.append(message.payload)
-        print("Appended message to message list.")
+        if message.topic not in topics_received:
+            topics_received.append(message.topic)
+            print("Message(Raw): " + str(message.payload))
+            messages.append(message.payload)
+            print("Appended message to message list.")
+        else:
+            print('Warning! Duplicate topic received, ignoring.')
         state += 1
 
     elif state == MAX_STATES - 1:
         print("Current State: " + str(state))
         print("TOPIC: " + message.topic)
-        print("Message(Raw): " + str(message.payload))
-        messages.append(message.payload)
-        print("Appended message to message list.")
+        if message.topic not in topics_received:
+            print("Message(Raw): " + str(message.payload))
+            messages.append(message.payload)
+            print("Appended message to message list.")
+        else:
+            print('Warning! Duplicate topic received, ignoring.')
+
         if dataLogic.is_connection_active:
             document = {}
             try:
@@ -128,6 +139,7 @@ def on_message(client, userdata, message):
 
         state = 0
         messages = []
+        topics_received = []
 
 
 # debug logger
