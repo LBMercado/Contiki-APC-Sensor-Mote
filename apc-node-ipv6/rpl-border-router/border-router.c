@@ -56,11 +56,6 @@
 #include <string.h>
 #include <ctype.h>
 /*--------------------------------------------------------*/
-#define UDP_CLIENT_PORT        6000
-#define UDP_SERVER_PORT        6001
-#define RESET_MOTE_DELAY       30
-static struct uip_udp_conn *sink_conn;
-/*--------------------------------------------------------*/
 #define DEBUG 1
 #include "net/ip/uip-debug.h"
 
@@ -375,12 +370,6 @@ print_local_addresses(void* data)
   }
 }
 /*---------------------------------------------------------------------------*/
-static void
-set_custom_addresses(void)
-{
-	/* set custom addresses/routes here*/
-}
-/*---------------------------------------------------------------------------*/
 void
 request_prefix(void)
 {
@@ -410,31 +399,8 @@ set_prefix_64(uip_ipaddr_t *prefix_64)
   }
 }
 /*---------------------------------------------------------------------------*/
-static void
-send_cmd_packet(void *ptr)
-{
-  mote_message_t msg;
-  msg.type = SINK_CMD;
-  sprintf(msg.data, "reset");
-  uint8_t count = 0; //TODO: for some odd reason the loop below goes on indefinitely without this
-
-  PRINTF("Number of routes: %u\n", uip_ds6_route_num_routes());
-  for(uip_ds6_route_t *r = uip_ds6_route_head(); r != NULL && count < uip_ds6_route_num_routes();
-		  r = uip_ds6_route_next(r)) {
-	uip_ipaddr_t target_address = r->ipaddr;
-
-	uip_udp_packet_sendto(sink_conn, &msg, sizeof(msg),
-	                          &target_address, UIP_HTONS(UDP_SERVER_PORT));
-	PRINTF("%u-byte command packet sent to mote [", sizeof(msg));
-	PRINT6ADDR(&target_address);
-	PRINTF("]\nCommand = %s\n", msg.data);
-	count++;
-  }
-}
-/*---------------------------------------------------------------------------*/
 PROCESS_THREAD(border_router_process, ev, data)
 {
-  static struct ctimer backoff_timer;
   static struct etimer et;
 
   PROCESS_BEGIN();
@@ -471,23 +437,10 @@ PROCESS_THREAD(border_router_process, ev, data)
    */
   NETSTACK_MAC.off(1);
 
-  /* new connection with remote host */
-	sink_conn = udp_new(NULL, UIP_HTONS(UDP_SERVER_PORT), NULL);
-	if(sink_conn == NULL) {
-	  PRINTF("No UDP connection available!\n");
-	} else {
-		udp_bind(sink_conn, UIP_HTONS(UDP_CLIENT_PORT));
-		PRINTF("Created a connection with the server ");
-		PRINT6ADDR(&sink_conn->ripaddr);
-		PRINTF(" local/remote port %u/%u\n",
-		UIP_HTONS(sink_conn->lport), UIP_HTONS(sink_conn->rport));
-	}
-
 #if DEBUG || 1
   print_local_addresses(NULL);
 #endif
 
-  ctimer_set(&backoff_timer, RESET_MOTE_DELAY * CLOCK_SECOND, send_cmd_packet, NULL);
   while(1) {
     PROCESS_YIELD();
     if (ev == sensors_event && data == &button_sensor) {
