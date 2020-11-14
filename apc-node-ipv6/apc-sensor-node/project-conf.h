@@ -4,12 +4,12 @@
 /*----------------------------------------------------------------*/
 /*------------------SENSOR-CONFIGURATION-------------------------*/
 /*----------------------------------------------------------------*/
-// make a reading every 2 minutes
-#define APC_SENSOR_NODE_READ_INTERVAL_SECONDS_CONF                  120
-// publish readings every 20 minutes
-#define PUBLISH_CONF_INTERVAL_SEC                                   1200
+// make a reading every 5 minutes
+#define APC_SENSOR_NODE_READ_INTERVAL_SECONDS_CONF                  300
+// publish readings every 60 minutes
+#define PUBLISH_CONF_INTERVAL_SEC                                   3600
 /* designated id for mote */
-#define MOTE_ID                         113
+#define MOTE_ID                         056
 #define FORCE_CALIBRATION               0
 
 /* Use an external ADC chip (ADC128S022)
@@ -108,10 +108,8 @@
 /*----------------------------------------------------------------*/
 #define MQTT_CONF_BROKER_IP_ADDR        "FD00::1"
 #if MOTE_ID == 056
-#define APC_SENSOR_ADDRESS_CONF         "FD00::212:4B00:194A:51E1"
 #define APC_SENSOR_MOTE_ID_CONF         "056"
 #elif MOTE_ID == 113
-#define APC_SENSOR_ADDRESS_CONF         "FD00::212:4B00:194A:5174"
 #define APC_SENSOR_MOTE_ID_CONF         "113"
 #endif
 #define MQTT_CONF_STATUS_LED            LEDS_WHITE

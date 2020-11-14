@@ -34,14 +34,8 @@
 #include "dev/shared-sensors.h"
 #endif
 /*---------------------------------------------------------------------------*/
-#define DEBUG DEBUG_PRINT
+#define DEBUG 0 //DEBUG_PRINT
 #include "net/ip/uip-debug.h"
-/*---------------------------------------------------------------------------*/
-#ifdef APC_SENSOR_ADDRESS_CONF
-#define APC_SENSOR_ADDRESS APC_SENSOR_ADDRESS_CONF
-#else
-#define APC_SENSOR_ADDRESS ""
-#endif
 /*----------------------------------------------------------------------------------*/
 #if !NETSTACK_CONF_WITH_IPV6 || !UIP_CONF_ROUTER || !UIP_CONF_IPV6_RPL
 #error "APC-Sink-Node will be unable to function properly with this current contiki configuration."
@@ -78,7 +72,7 @@ const uint8_t SENSOR_CALIB_TYPES[SENSOR_CALIB_COUNT] =
 #ifdef  APC_SENSOR_MOTE_ID_CONF
 #define APC_SENSOR_MOTE_ID                                APC_SENSOR_MOTE_ID_CONF
 #else
-#define APC_SENSOR_MOTE_ID                                "mote"
+#define APC_SENSOR_MOTE_ID                                "000"
 #endif
 /*----------------------------------------------------------------------------------*/
 /* Minimum for dht22 read intervals, consider slowest sensor */
@@ -100,12 +94,6 @@ const uint8_t SENSOR_CALIB_TYPES[SENSOR_CALIB_COUNT] =
 #define APC_SENSOR_NODE_AMUX_SELECT_ANEMOMETER            0
 #define APC_SENSOR_NODE_AMUX_SELECT_WIND_VANE             1
 #endif /* if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC */
-/*----------------------------------------------------------------------------------*/
-#define UIP_IP_BUF                                        ( (struct uip_ip_hdr*) & uip_buf[UIP_LLH_LEN] )
-#define UDP_CLIENT_PORT	6000
-#define UDP_SERVER_PORT	6001
-#define UDP_EXAMPLE_ID  190
-static struct uip_udp_conn *sink_conn;
 /*----------------------------------------------------------------------------------*/
 static const char *SENSOR_TYPE_HEADERS[] = {
 		"Temperature (°C)",
@@ -132,10 +120,6 @@ typedef struct{
 /*----------------------------------------------------------------------------------*/
 static sensor_info_t sensor_infos[SENSOR_COUNT];
 /*----------------------------------------------------------------------------------*/
-static uip_ipaddr_t collect_addr;
-static uip_ipaddr_t prefix;
-/*----------------------------------------------------------------------------------*/
-static uint32_t seqNo;
 static struct etimer et_collect;
 /*----------------------------------------------------------------------------------*/
 /* MQTT-specific Configuration START (code copied from cc2538-common/mqtt-demo)*/
@@ -283,12 +267,14 @@ static int def_rt_rssi = 0;
 static mqtt_client_config_t conf;
 /* MQTT-specific Configuration END (code copied from cc2538-common/mqtt-demo)*/
 /*----------------------------------------------------------------------------------*/
-PROCESS(apc_sensor_node_network_init_process, "APC Sensor Node (Network Initialization) Process Handler");
+static process_event_t PROCESS_EVENT_RESET_TIMERS;
+/*----------------------------------------------------------------------------------*/
 PROCESS(apc_sensor_node_collect_gather_process, "APC Sensor Node (Collector Gather) Process Handler");
 PROCESS(apc_sensor_node_en_sensors_process, "APC Sensor Node (Sensor Initialization) Process Handler");
 PROCESS(mqtt_handler_process, "MQTT Process Handler");
+PROCESS(custom_events_process, "Custom Events Process Handler");
 /*----------------------------------------------------------------------------------*/
-AUTOSTART_PROCESSES(&apc_sensor_node_network_init_process, &apc_sensor_node_en_sensors_process, &mqtt_handler_process);
+AUTOSTART_PROCESSES(&custom_events_process, &apc_sensor_node_en_sensors_process, &mqtt_handler_process);
 /*---------------------------------------------------------------------------*/
 static int
 activate_sensor
@@ -803,27 +789,6 @@ read_sensor
 		return APC_SENSOR_OPFAILURE;
 	}
 }
-/*---------------------------------------------------------------------------*/
-void
-print_local_addresses(void* data)
-{
-	uint8_t i;
-	uint8_t state;
-	PRINTF("Mote IPv6 addresses: ");
-	for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
-		state = uip_ds6_if.addr_list[i].state;
-		
-		if(state == ADDR_TENTATIVE || state == ADDR_PREFERRED) {
-			
-			PRINT6ADDR(&uip_ds6_if.addr_list[i].ipaddr);
-			PRINTF("\n");
-			/* hack to make address "final" */
-			if (state == ADDR_TENTATIVE) {
-				uip_ds6_if.addr_list[i].state = ADDR_PREFERRED;
-			}
-		}
-	}
-}
 /*----------------------------------------------------------------------------------*/
 static void
 print_local_dev_info()
@@ -837,45 +802,13 @@ print_local_dev_info()
 void
 set_local_ip_addresses(uip_ipaddr_t* prefix_64, uip_ipaddr_t* collectorAddr)
 {
-	if (prefix_64 != NULL && !uip_is_addr_unspecified(prefix_64)){
-		memcpy(collectorAddr, prefix_64, 16); //copy 64-bit prefix_64
-		uip_ds6_set_addr_iid(collectorAddr, &uip_lladdr);
-		uip_ds6_addr_add(collectorAddr, 0, ADDR_AUTOCONF);
-	} else{
-		//no prefix available, assign a hardcoded address
-		uiplib_ip6addrconv(APC_SENSOR_ADDRESS, collectorAddr);
-		uip_ds6_set_addr_iid(collectorAddr, &uip_lladdr);
-		uip_ds6_addr_add(collectorAddr, 0, ADDR_AUTOCONF);
-	}
+	// automatically receive address from border router, do nothing
 }
 /*----------------------------------------------------------------------------------*/
 void
 set_remote_ip_addresses(uip_ipaddr_t* prefix_64, uip_ipaddr_t* remote_addr)
 {
 	// do nothing
-}
-/*----------------------------------------------------------------------------------*/
-void
-update_ip_addresses_prefix(void* prefix_64)
-{
-	uip_ipaddr_t* pref;
-	uip_ipaddr_t collectAddr;
-	
-	if (prefix_64 == NULL)
-		return;
-	pref = (uip_ipaddr_t*)prefix_64;
-	//don't do anything if they are the same or unspecified
-	if (!uip_ipaddr_cmp(pref, &prefix) && !uip_is_addr_unspecified(pref)) 
-	{
-		PRINTF("Prefix updated from (");
-		PRINT6ADDR(&prefix);
-		PRINTF(") to (");
-		PRINT6ADDR(pref);
-		PRINTF(")\n");
-		memcpy(&prefix, pref, 16); //copy 64-bit prefix
-		/* set address of this node */
-		set_local_ip_addresses(&prefix, &collectAddr);
-	}
 }
 /*----------------------------------------------------------------------------------*/
 /* MQTT-specific definitions START (code copied from cc2538-common/mqtt-demo, with some modifications)*/
@@ -925,20 +858,24 @@ uint16_t chunk_len)
 {
 	DBG("Pub Handler: topic='%s' (len=%u), chunk_len=%u\n", topic, topic_len,
 	chunk_len);
-	/* If we don't like the length, ignore */
-	if(topic_len != 23 || chunk_len != 1) {
-		printf("Incorrect topic or chunk len. Ignored\n");
-		return;
-	}
 	/* If the format != json, ignore */
 	if(strncmp(&topic[topic_len - 4], "json", 4) != 0) {
 		printf("Incorrect format\n");
 	}
-	if(strncmp(&topic[10], "leds", 4) == 0) {
+	if(strncmp(&topic[16], "leds", 4) == 0) {
+		PRINTF("received command: leds\n");
 		if(chunk[0] == '1') {
 			leds_on(LEDS_RED);
 		} else if(chunk[0] == '0') {
 			leds_off(LEDS_RED);
+		}
+		return;
+	}
+	else if(strncmp(&topic[16], "timer-reset", 9) == 0){
+		PRINTF("received command: timer-reset\n");
+		if(chunk[0] == '1') {
+			process_post(&apc_sensor_node_collect_gather_process, PROCESS_EVENT_RESET_TIMERS, NULL);
+			process_post(&mqtt_handler_process, PROCESS_EVENT_RESET_TIMERS, NULL);
 		}
 		return;
 	}
@@ -1009,8 +946,10 @@ construct_pub_topic(void)
 static int
 construct_sub_topic(void)
 {
-	int len = snprintf(sub_topic, BUFFER_SIZE, "apc-iot/cmd/%s/fmt/json",
-	conf.cmd_type);
+	int len = snprintf(sub_topic, BUFFER_SIZE, "%s/%s/cmd/%s/fmt/json",
+			APC_SENSOR_TOPIC_NAME,
+			APC_SENSOR_MOTE_ID,
+			conf.cmd_type);
 	/* len < 0: Error. Len >= BUFFER_SIZE: Buffer too small */
 	if(len < 0 || len >= BUFFER_SIZE) {
 		printf("Sub Topic: %d, Buffer %d\n", len, BUFFER_SIZE);
@@ -1229,7 +1168,8 @@ publish(void)
 	/* Put our preferred address string representation in a buffer */
 	char pref_addr_str[64];
 	memset(pref_addr_str, 0, sizeof(pref_addr_str));
-	ipaddr_sprintf(pref_addr_str, sizeof(pref_addr_str), &collect_addr);
+	uip_ipaddr_t pref_addr = uip_ds6_get_global(ADDR_PREFERRED)->ipaddr;
+	ipaddr_sprintf(pref_addr_str, sizeof(pref_addr_str), &pref_addr);
 	len = snprintf(buf_ptr, remaining, ",\"Preferred Address\":\"%s\"",
 			pref_addr_str);
 	if(len < 0 || len >= remaining) {
@@ -1437,109 +1377,6 @@ state_machine(void)
 /*----------------------------------------------------------------------------------*/
 /* MQTT-specific definitions END (code copied from cc2538-common/mqtt-demo, with some modifications)*/
 /*----------------------------------------------------------------------------------*/
-static void
-tcpip_handler(void)
-{
-	mote_message_t *appdata;
-
-	if(uip_newdata()) {
-		leds_on(STATUS_LED);
-		ctimer_set(&ct_led, PUBLISH_LED_ON_DURATION, publish_led_off, NULL);
-
-		appdata = (mote_message_t *)uip_appdata;
-		if (appdata->type == SINK_CMD) {
-			PRINTF("Command received from sink [");
-			PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
-			PRINTF("]: %s\n", appdata->data);
-
-			// reset timers
-			/* TODO: timer reset hangs the collect timer and mqtt publish functionality, fix this
-			 * etimer_reset(&et_collect);
-			PRINTF("Collect timer reset!\n");
-			etimer_reset(&publish_periodic_timer);
-			PRINTF("MQTT publish timer reset!\n");*/
-		}
-		else {
-			PRINTF("Unknown message type received from [");
-			PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
-			PRINTF("]\n");
-		}
-	}
-}
-/*----------------------------------------------------------------------------------*/
-PROCESS_THREAD(apc_sensor_node_network_init_process, ev, data)
-{
-	//initialization
-	static struct ctimer ct_net_print;
-	static struct ctimer ct_update_addr;
-	static uip_ipaddr_t curPrefix;
-	rpl_dag_t* dag;
-	PROCESS_EXITHANDLER();
-	PROCESS_BEGIN();
-	PRINTF("APC Sensor Node (Network Initialization) begins...\n");
-	seqNo = 1;
-	uip_create_unspecified(&prefix);
-	leds_off(LEDS_ALL);
-	leds_on(LEDS_GREEN);
-	
-	PRINTF("Mote ID configured as %s\n", APC_SENSOR_MOTE_ID);
-
-	/* get prefix from DAG */
-	dag = rpl_get_any_dag();
-	if (dag != NULL && !uip_is_addr_unspecified(&dag->prefix_info.prefix) ){
-		uip_ip6addr_copy(&prefix, &dag->prefix_info.prefix);
-		PRINTF("DAG Prefix: ");
-		PRINT6ADDR(&prefix);
-		PRINTF("\n");
-	}
-	else{
-		PRINTF("DAG Prefix not set.\n");
-	}
-	
-	/* set address of this node */
-	set_local_ip_addresses(&prefix, &collect_addr);
-
-	sink_conn = udp_new(NULL, UIP_HTONS(UDP_CLIENT_PORT), NULL);
-	if(sink_conn == NULL) {
-		PRINTF("No UDP connection available, this node won't be able to receive sink commands!\n");
-	} else {
-		udp_bind(sink_conn, UIP_HTONS(UDP_SERVER_PORT));
-
-		PRINTF("Created a server connection with remote address ");
-		PRINT6ADDR(&sink_conn->ripaddr);
-		PRINTF(" local/remote port %u/%u\n", UIP_HTONS(sink_conn->lport),
-			 UIP_HTONS(sink_conn->rport));
-	}
-
-	print_local_addresses(NULL);
-	ctimer_set(&ct_net_print, CLOCK_SECOND * LOCAL_ADDR_PRINT_INTERVAL, print_local_addresses, NULL);
-	ctimer_set(&ct_update_addr, CLOCK_SECOND * PREFIX_UPDATE_INTERVAL, update_ip_addresses_prefix, &curPrefix);
-
-	while(1) {
-		PROCESS_YIELD();
-		if(ev == tcpip_event)
-		   tcpip_handler();
-		if(ctimer_expired(&ct_net_print))
-			ctimer_reset(&ct_net_print);
-		if(ctimer_expired(&ct_update_addr)) {
-			/* get prefix from DAG */
-			dag = rpl_get_any_dag();
-			if (dag != NULL && !uip_is_addr_unspecified(&dag->prefix_info.prefix) ){
-				uip_ip6addr_copy(&curPrefix, &dag->prefix_info.prefix);
-				PRINTF("DAG Prefix: ");
-				PRINT6ADDR(&curPrefix);
-				PRINTF("\n");
-			}
-			else{
-				PRINTF("DAG missing or prefix not set.\n");
-			}
-			ctimer_reset(&ct_update_addr);
-		}
-	}
-	
-	PROCESS_END();
-}
-/*----------------------------------------------------------------------------------*/
 PROCESS_THREAD(apc_sensor_node_collect_gather_process, ev, data)
 {
 	//initialization
@@ -1588,6 +1425,11 @@ PROCESS_THREAD(apc_sensor_node_collect_gather_process, ev, data)
 			PRINTF("apc_sensor_node_collect_gather_process: collection finished\n");
 			etimer_reset(&et_collect);
 		}
+		if (ev == PROCESS_EVENT_RESET_TIMERS){
+			etimer_restart(&et_collect);
+			PRINTF("%s: reset signal received, resetting collection timer\n", apc_sensor_node_collect_gather_process.name);
+		}
+
 	}
 	PROCESS_END();
 }
@@ -1650,7 +1492,17 @@ PROCESS_THREAD(mqtt_handler_process, ev, data)
 			ping_parent();
 			etimer_set(&echo_request_timer, conf.def_rt_ping_interval);
 		}
+		if (ev == PROCESS_EVENT_RESET_TIMERS){
+			etimer_restart(&publish_periodic_timer);
+			PRINTF("%s: reset signal received, resetting MQTT publish timer\n", mqtt_handler_process.name);
+		}
 	}
+	PROCESS_END();
+}
+/*----------------------------------------------------------------------------------*/
+PROCESS_THREAD(custom_events_process, ev, data){
+	PROCESS_BEGIN();
+	PROCESS_EVENT_RESET_TIMERS = process_alloc_event();
 	PROCESS_END();
 }
 /*----------------------------------------------------------------------------------*/
