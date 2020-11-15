@@ -64,7 +64,9 @@ You can make use of the mqtt subscriber to make the published data persistent. T
 	4. The .CSV file should be outputted in the directory where the csv_convert.py is.
 
 ## Running the API for the web application
-	1. Make sure that MongoDB is properly set up and working
+[Refer here for the creation/naming convention of the persistent models](https://github.com/LBMercado/stacked-generalization-ensemble-learning-for-air-pollutant-concentration-prediction.git)
+
+	1. Make sure that MongoDB  is properly set up and working and the models are properly formatted and stored in the folder where the script is in
 	2. Make necessary changes to the config.ini file, especially the 'apc_model' section
 	3. Run apc_monitor_api.py to start the API.
 
