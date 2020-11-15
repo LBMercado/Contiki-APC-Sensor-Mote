@@ -853,6 +853,12 @@ publish_led_off(void *d)
 }
 /*---------------------------------------------------------------------------*/
 static void
+callback_led_off(void *data){
+	unsigned int color = *((unsigned int *)data);
+	leds_off(color);
+}
+/*---------------------------------------------------------------------------*/
+static void
 pub_handler(const char *topic, uint16_t topic_len, const uint8_t *chunk,
 uint16_t chunk_len)
 {
@@ -1438,6 +1444,7 @@ PROCESS_THREAD(apc_sensor_node_en_sensors_process, ev, data)
 {
 	//initialization
 	uint8_t i;
+	static uint32_t color;
 	PROCESS_EXITHANDLER();
 	PROCESS_BEGIN();
 	PRINTF("APC Sensor Node (Sensor Initialization) begins...\n");
@@ -1446,8 +1453,15 @@ PROCESS_THREAD(apc_sensor_node_en_sensors_process, ev, data)
 	for (i = 0; i < SENSOR_COUNT; i++) {
 		sensor_infos[i].sensor_type = SENSOR_TYPES[i];
 		sensor_infos[i].is_calibrated = 0;
+		int res = activate_sensor(sensor_infos[i].sensor_type) == APC_SENSOR_OPFAILURE;
 		PRINTF("apc_sensor_node_en_sensors_process: Sensor(0x%01x): %s\n", sensor_infos[i].sensor_type,
-		activate_sensor(sensor_infos[i].sensor_type) == APC_SENSOR_OPFAILURE ? "ERROR\0" : "OK\0" );
+		res ? "ERROR\0" : "OK\0" );
+		if (res)
+			color = LEDS_GREEN;
+		else
+			color = LEDS_RED;
+		leds_on(color);
+		ctimer_set(&ct_led, PUBLISH_LED_ON_DURATION, callback_led_off, &color);
 	}
 #if !ADC_SENSORS_CONF_USE_EXTERNAL_ADC
 	//configure the analog multiplexer
