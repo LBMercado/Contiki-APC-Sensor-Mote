@@ -125,7 +125,7 @@ class _SwitchTranslator:
             raw_value = _SwitchTranslator.MQ131_RESRATIO_MAX
         # Compare from the bottom since the boundaries are in ascending order
         boundary_len = len(_SwitchTranslator.MQ131_RESRATIO_BOUNDARIES)
-        for index in range(1, boundary_len - 1):
+        for index in range(1, boundary_len):
             if raw_value - _SwitchTranslator.RESRATIO_TOLERANCE <= \
                     _SwitchTranslator.MQ131_RESRATIO_BOUNDARIES[index]:
                 computed_value = _SwitchTranslator._get_log_log_function(
