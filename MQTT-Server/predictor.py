@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 
 
+# when passing a recurrent predictor, include only one model in the dict
 class Predictor:
     def __init__(self, model_type, predictors=None):
         if model_type == 'direct' or model_type == 'recurrent':
@@ -33,10 +34,7 @@ class Predictor:
                 time_step = 1
             preds = None
             for idx in range(time_step):
-                if idx == 0:
-                    preds = self.model_list[0].predict(inputs)
-                else:
-                    preds = self.model_list[idx].predict(preds)
+                preds = self.model_list[0].predict(inputs)
                 predictions.append(preds)
             return predictions
         raise ValueError('Invalid model type specified = {}.'.format(self.model_type))
@@ -47,19 +45,23 @@ class Predictor:
             self.model_list.append(model)
 
 
+# when inputs contain lagged features, use this
 class SlidingPredictor(Predictor):
     def predict(self, inputs, time_step) -> list:
         input_np_arr = None
         predictions = list()
         if isinstance(inputs, pd.DataFrame):
             input_np_arr = inputs.to_numpy()
-        elif isinstance(np.array, inputs):
+        elif isinstance(inputs, (np.ndarray, np.generic)):
             input_np_arr = inputs
-        elif isinstance(list, (pd.Series, np.ndarray)):
+        elif isinstance(inputs, (list, pd.Series, np.ndarray)):
             input_np_arr = np.array(inputs)
         else:
             raise ValueError('incorrect datatype for value passed: {}, must be a list, numpy array, or pandas '
                              'data structure'.format(type(inputs)))
+        # check if single sample
+        if len(input_np_arr.shape) == 1:
+            input_np_arr = input_np_arr.reshape(1, -1)
 
         if len(self.model_list) == 0:
             raise ValueError('model is not initialized')
@@ -74,15 +76,13 @@ class SlidingPredictor(Predictor):
             return predictions
 
         elif self.model_type == 'recurrent':
-            if time_step > len(self.model_list):
-                time_step = len(self.model_list)
-            elif time_step <= 0:
+            if time_step <= 0:
                 time_step = 1
             # perform a sliding window approach to the input
             preds = None
             for idx in range(time_step):
                 if idx == 0:
-                    preds = self.model_list[idx].predict(input_np_arr)
+                    preds = self.model_list[0].predict(input_np_arr)
                 else:
                     # remove the earliest step (first 9 columns)
                     input_arr = np.delete(input_np_arr, slice(0, 9), axis=1)
@@ -91,7 +91,7 @@ class SlidingPredictor(Predictor):
                     input_arr = np.append(input_arr, preds, axis=1)
 
                     # predict the next step
-                    preds = self.model_list[idx].predict(input_arr)
+                    preds = self.model_list[0].predict(input_arr)
                 predictions.append(preds)
             return predictions
         else:
