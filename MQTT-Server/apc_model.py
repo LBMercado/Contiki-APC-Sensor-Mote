@@ -1,5 +1,5 @@
 from apc_label_encoder import ApcLabelEncoder
-from apc_model_helper import parse_wind_direction_degrees, load_singleton_model, lazy_load_model, reformat_pred_data
+from apc_model_helper import parse_wind_direction_degrees, load_singleton_model, lazy_load_singleton_model, reformat_pred_data
 from predictor import SlidingPredictor, LazySlidingPredictor
 from typing import Dict, List
 from datetime import timedelta
@@ -62,15 +62,13 @@ class ApcModel:
                 sliding_window = np.hstack((sliding_window, window))
 
         preds_list = list()
+        model = lazy_load_singleton_model(self.model_name)
         for cur_time_step in range(1, time_step + 1):
-            model = lazy_load_model(self.model_name, cur_time_step)
             sliding_window, preds = self.predictor_model.lazy_predict(sliding_window, model)
             formatted_preds = reformat_pred_data(preds)
             formatted_preds['date'] = timedelta(hours=cur_time_step) + present_date
             preds_list.append(formatted_preds)
-
-            del model
-
+        del model
         return preds_list
 
     def _reformat_apc_data(self, apc_data: Dict) -> np.ndarray:

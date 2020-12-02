@@ -70,6 +70,19 @@ def lazy_load_model(model_name: str, nth_model: int):
     return loaded_model
 
 
+def lazy_load_singleton_model(model_name: str):
+    loaded_model = None
+    root_folder = 'ml_models_singleton'
+    file_name = '{}_model.sav'.format(model_name)
+    file_path = os.path.join(root_folder, file_name)
+    if os.path.exists(file_path):
+        loaded_model = joblib.load(file_path)
+        print('Loaded model from file {}'.format(file_name))
+    else:
+        print('warning! no model loaded!')
+    return loaded_model
+
+
 def reformat_pred_data(preds: ndarray):
     formatted_preds = {
         'PM25 (ug/m3)': preds[0][2], 'CO (PPM)': preds[0][3], 'NO2 (PPM)': preds[0][4] / 1000, 'O3 (PPB)': preds[0][5]
