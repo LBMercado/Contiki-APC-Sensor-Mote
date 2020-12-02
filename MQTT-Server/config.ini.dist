@@ -10,6 +10,8 @@ keep_alive_time = 60
 top_level_topic = apc-iot
 subtopics = 113, 056
 qos_level = 0
+# minimum time to wait (in seconds) between messages before a reset timer signal is sent to motes in network
+timeout_duration = 1200
 
 [mongodb]
 db_name = apc-iot
@@ -28,7 +30,7 @@ columns_mote_info = myName, Uptime (sec), Def Route, RSSI (dBm), Preferred Addre
 
 [apc_model]
 use_api_wind = 1
-lazy_load = 1
+lazy_load = 0
 
 # relative to project location
 server_file = csv_data/air-quality-data.csv
