@@ -39,6 +39,21 @@ def load_model(model_name: str):
     return loaded_model
 
 
+def load_singleton_model(model_name: str):
+    loaded_model = None
+    root_folder = 'ml_models_singleton'
+    file_name = '{}_model.sav'.format(model_name)
+    file_path = os.path.join(root_folder, file_name)
+    if os.path.exists(file_path):
+        loaded_model = joblib.load(file_path)
+        print('Loaded model from file {}'.format(file_name))
+    else:
+        print('warning! no model found.')
+    if not loaded_model:
+        print('warning! No model loaded.')
+    return {'t+1': loaded_model}
+
+
 def lazy_load_model(model_name: str, nth_model: int):
     if nth_model <= 0 or nth_model > 12:
         raise ValueError('nth model exceeds allowed range [1 - 12]')

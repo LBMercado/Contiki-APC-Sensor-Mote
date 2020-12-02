@@ -1,5 +1,5 @@
 from apc_label_encoder import ApcLabelEncoder
-from apc_model_helper import parse_wind_direction_degrees, load_model, lazy_load_model, reformat_pred_data
+from apc_model_helper import parse_wind_direction_degrees, load_singleton_model, lazy_load_model, reformat_pred_data
 from predictor import SlidingPredictor, LazySlidingPredictor
 from typing import Dict, List
 from datetime import timedelta
@@ -18,8 +18,8 @@ class ApcModel:
 
     def build_model(self, model_name: str):
         if not self.lazy_load:
-            model_list = load_model(model_name)
-            self.predictor_model = SlidingPredictor('recurrent', model_list)
+            model_dict = load_singleton_model(model_name)
+            self.predictor_model = SlidingPredictor('recurrent', model_dict)
         else:
             self.predictor_model = LazySlidingPredictor('recurrent')
 
@@ -40,8 +40,6 @@ class ApcModel:
         present_date = apc_data_window[len(apc_data_window) - 1]['date']
         for idx, apc_data in enumerate(apc_data_window):
             window = self._reformat_apc_data(apc_data)
-            if idx == len(apc_data_window) - 1:
-                present_date = apc_data['date']
             if idx == 0:
                 sliding_window = window
             else:
