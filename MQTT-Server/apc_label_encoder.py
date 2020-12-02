@@ -9,7 +9,7 @@ class ApcLabelEncoder:
         self.wind_direction_le = LabelEncoder()
         self.wind_direction_le.fit(['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'])
         self.weather_condition_le = LabelEncoder()
-        self.weather_condition_le.fit((['CLOUDS', 'RAIN', 'CLEAR', 'RAIN&THUNDERSTORM', 'THUNDERSTORM']))
+        self.weather_condition_le.fit((['CLOUDS', 'RAIN', 'CLEAR', 'RAIN&THUNDERSTORM', 'THUNDERSTORM', 'MIST']))
 
     def encode_wind_direction(self, wind_direction: str):
         wind_direction = wind_direction.strip().upper()
