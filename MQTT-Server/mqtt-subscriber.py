@@ -5,15 +5,16 @@ from sensor_msg_parser import SensorMessageParser
 from datetime import datetime
 import weather_access
 import json
-
+from time import time
 
 def main():
     """ MQTT Parameters """
-    global SUBSCRIBER_ID, SERVER_ADDRESS, MQTT_PORT, KEEP_ALIVE_TIME, TOP_LEVEL_TOPIC, SUBTOPICS, QOS_LEVEL
+    global SUBSCRIBER_ID, SERVER_ADDRESS, MQTT_PORT, KEEP_ALIVE_TIME, TOP_LEVEL_TOPIC, SUBTOPICS, QOS_LEVEL, \
+        TIMEOUT_DURATION
     global DB_NAME, DB_ADDRESS, DB_PORT, DB_MOTEDATA_COLL, DB_PREDICTIONS_COLL
     global API_KEY, LOCATION_ID
     global client, dataLogic
-    global state, MAX_STATES, messages, topics_received
+    global state, MAX_STATES, messages, topics_received, timeout_timer
 
     config = ConfigParser()
     config.read('config.ini')
@@ -26,6 +27,7 @@ def main():
     SUBTOPICS = config['mqtt']['subtopics'].split(',')
     SUBTOPICS = [x.strip(' ') for x in SUBTOPICS]  # trim whitespace
     QOS_LEVEL = int(config['mqtt']['qos_level'])
+    TIMEOUT_DURATION = int(config['mqtt']['timeout_duration'])
     # mongodb configuration
     DB_NAME = config['mongodb']['db_name']
     DB_ADDRESS = config['mongodb']['db_address']
@@ -72,7 +74,20 @@ def on_connect(client, userdata, flags, rc):
 # The callback for when a PUBLISH message is received from the server.
 def on_message(client, userdata, message):
     print("Received PUBLISH")
-    global state, messages, topics_received
+    global state, messages, topics_received, timeout_timer
+    if state == 0:
+        timeout_timer = time()
+    else:
+        if time() - timeout_timer >= TIMEOUT_DURATION:
+            print('Warning! Timeout duration reached in between messages, sending reset timer request to motes.')
+            for subtopic in SUBTOPICS:
+                # reset mote timers to synchronize mqtt publication
+                client.publish("{}/{}/cmd/timer-reset/fmt/json".format(TOP_LEVEL_TOPIC, subtopic), "1")
+            state = 0
+            messages = []
+            topics_received = []
+        else:
+            timeout_timer = time()
     if state < MAX_STATES - 1:
         print("Current State: " + str(state))
         print("TOPIC: " + message.topic)
