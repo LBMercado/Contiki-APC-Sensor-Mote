@@ -1,8 +1,13 @@
 # Contiki-APC-Sensor-Mote
+![](misc/imgs/Sensor_Node_Setup.jpg)
 This makes use of the [_**Contiki OS**_](https://github.com/contiki-os/contiki) and [_**Zoul Firefly Platform**_](https://github.com/Zolertia/Resources/wiki/Firefly).
 The codes are designed to work in the Zoul Firefly Platform, I cannot guarantee that they will still work on a different platform. Further, the python scripts were ran and tested in a Linux OS, so there might be incompatibilities when run on different OS.
 
 The following codes written are used to program the motes to read from the sensors, and communicate them from the collector motes to a sink in the border router.
+
+## Block Diagram
+![](misc/imgs/BlockDiagramV2.png)
+
 
 ## Two implementations are available here:
 * the **rime** implementation is a non-ip based network used for testing purposes with no connectivity outside its local network.
@@ -95,6 +100,6 @@ reference for the correct code
 
 For the actual circuit of the sensor node, refer to the diagram below
 # Sensor Node Schematic Diagram
-<a href="https://drive.google.com/uc?export=view&id=1mgLS3_1ro0mzjTN28LDw48VPwiLniEfL"><img src="https://drive.google.com/uc?export=view&id=1mgLS3_1ro0mzjTN28LDw48VPwiLniEfL" style="width: 500px; max-width: 100%; height: auto" title="Click for the larger version."/></a>
+![](misc/imgs/Schem_Sensor_Node.png)
 # Power Supply Schematic Diagram
-<a href="https://drive.google.com/uc?export=view&id=1yAzURglyXl8tRO5NIybEmQMSLwTCKw3A"><img src="https://drive.google.com/uc?export=view&id=1yAzURglyXl8tRO5NIybEmQMSLwTCKw3A" style="width: 500px; max-width: 100%; height: auto" title="Click for the larger version."/></a>
+![](misc/imgs/Schem_Power_Supply.png)
