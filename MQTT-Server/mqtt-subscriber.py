@@ -80,6 +80,7 @@ def on_message(client, userdata, message):
     else:
         if time() - timeout_timer >= TIMEOUT_DURATION:
             print('Warning! Timeout duration reached in between messages, sending reset timer request to motes.')
+            print('Timeout reached after {} s'.format(timeout_timer/1000))
             for subtopic in SUBTOPICS:
                 # reset mote timers to synchronize mqtt publication
                 client.publish("{}/{}/cmd/timer-reset/fmt/json".format(TOP_LEVEL_TOPIC, subtopic), "1")
