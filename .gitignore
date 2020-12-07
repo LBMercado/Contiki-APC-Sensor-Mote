@@ -166,21 +166,27 @@ dmypy.json
 # google drive
 desktop.ini
 
-#contiki build
+# contiki build
 *.zoul
 obj_zoul/
 
-#python 
+# python 
 *.pyc
 
-#api keys and sensitive information
+# api keys and sensitive information
 config.ini
 
-#app output
+# app output
 /MQTT-Server/*.csv
 
-#pycharm env
+# pycharm env
 /MQTT-Server/venv
 
-#csv files
+# csv files
 *.csv
+
+# models
+/MQTT-Server/ml_models*/
+
+# old config
+*.old
