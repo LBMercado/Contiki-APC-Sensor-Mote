@@ -5,6 +5,9 @@ The codes are designed to work in the Zoul Firefly Platform, I cannot guarantee 
 
 The following codes written are used to program the motes to read from the sensors, and communicate them from the collector motes to a sink in the border router.
 
+## Update (2021/01/10)
+This repository is no longer maintained, use at your own risk.
+
 ## Block Diagram
 ![](misc/imgs/BlockDiagramV2.png)
 
